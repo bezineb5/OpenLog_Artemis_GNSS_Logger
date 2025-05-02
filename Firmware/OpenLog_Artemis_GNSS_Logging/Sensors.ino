@@ -139,14 +139,14 @@ bool beginSensors()
       gpsSensor_ublox.setMeasurementRate((uint16_t)(settings.usBetweenReadings / 1000ULL));
 
       // Set power mode if aggressive power management is enabled and the reading interval is greater than 1 second
-      if (settings.sensor_uBlox.aggressivePowerManagement && settings.usBetweenReadings >= 1000000ULL) {
-        Serial.println(F("Setting power mode to aggressive 1Hz"));
-        uint8_t powerMode = gpsSensor_ublox.getPowerSaveMode();
-        Serial.printf("Current power mode: %d\r\n", powerMode);
-        gpsSensor_ublox.setPowerManagement(SFE_UBLOX_PMS_MODE_AGGRESSIVE_1HZ, 0, 0);
-        powerMode = gpsSensor_ublox.getPowerSaveMode();
-        Serial.printf("New power mode: %d\r\n", powerMode);
-      }
+      //if (settings.sensor_uBlox.aggressivePowerManagement && settings.usBetweenReadings >= 1000000ULL) {
+      Serial.println(F("Setting power mode to aggressive 1Hz"));
+      uint8_t powerMode = gpsSensor_ublox.getPowerSaveMode();
+      Serial.printf("Current power mode: %d\r\n", powerMode);
+      gpsSensor_ublox.setPowerManagement(SFE_UBLOX_PMS_MODE_AGGRESSIVE_1HZ, 0, 0);
+      powerMode = gpsSensor_ublox.getPowerSaveMode();
+      Serial.printf("New power mode: %d\r\n", powerMode);
+      //}
 
       //Set the HNR rate
       gpsSensor_ublox.setHNRNavigationRate(settings.hnrNavigationRate);
