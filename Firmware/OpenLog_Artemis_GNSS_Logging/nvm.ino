@@ -172,6 +172,10 @@ void recordSettingsToFile()
     settingsFile.print("hnrNavigationRate="); settingsFile.println(settings.hnrNavigationRate);
     settingsFile.print("printGNSSDebugMessages="); settingsFile.println(settings.printGNSSDebugMessages);
     settingsFile.print("qwiicBusPullUps="); settingsFile.println(settings.qwiicBusPullUps);
+    settingsFile.println("enableAutomaticFileRotation=" + (String)settings.enableAutomaticFileRotation);
+    settingsFile.println("fileRotationIntervalMinutes=" + (String)settings.fileRotationIntervalMinutes);
+    settingsFile.println("usePreAllocatedFiles=" + (String)settings.usePreAllocatedFiles);
+    settingsFile.println("preAllocatedFileSizeMB=" + (String)settings.preAllocatedFileSizeMB);
 
     settingsFile.print("GNSS:log="); settingsFile.println(settings.sensor_uBlox.log);
     settingsFile.print("GNSS:powerManagement="); settingsFile.println(settings.sensor_uBlox.powerManagement);
@@ -400,6 +404,14 @@ bool parseLine(char* str) {
     settings.printGNSSDebugMessages = d;
   else if (strcmp(settingName, "qwiicBusPullUps") == 0)
     settings.qwiicBusPullUps = d;
+  else if (strcmp(settingName, "enableAutomaticFileRotation") == 0)
+    settings.enableAutomaticFileRotation = d;
+  else if (strcmp(settingName, "fileRotationIntervalMinutes") == 0)
+    settings.fileRotationIntervalMinutes = d;
+  else if (strcmp(settingName, "usePreAllocatedFiles") == 0)
+    settings.usePreAllocatedFiles = d;
+  else if (strcmp(settingName, "preAllocatedFileSizeMB") == 0)
+    settings.preAllocatedFileSizeMB = d;
     
   else if (strcmp(settingName, "GNSS:log") == 0)
     settings.sensor_uBlox.log = d;

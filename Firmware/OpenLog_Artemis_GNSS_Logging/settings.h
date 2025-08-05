@@ -91,6 +91,10 @@ struct struct_settings {
   uint8_t hnrNavigationRate = 1; //HNR Navigation Rate (if supported)
   bool printGNSSDebugMessages = false;
   uint8_t qwiicBusPullUps = 0; // Qwiic bus pull-up resistance: 0, 1(.5), 6, 12, 24 kOhms
+  bool enableAutomaticFileRotation = true; // If true, automatically create new log files at regular intervals
+  uint32_t fileRotationIntervalMinutes = 60; // Create new log file every X minutes (0 = disable)
+  bool usePreAllocatedFiles = true; // If true, pre-allocate fixed-size files filled with zeros
+  uint32_t preAllocatedFileSizeMB = 10; // Size of pre-allocated files in MB (1-100)
   struct_uBlox sensor_uBlox;
 } settings;
 

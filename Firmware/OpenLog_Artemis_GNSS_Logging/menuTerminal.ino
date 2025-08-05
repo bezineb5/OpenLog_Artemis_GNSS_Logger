@@ -65,6 +65,20 @@ void menuLogRate(bool *prevTerminalOutput)
     if (settings.frequentFileAccessTimestamps == true) Serial.println(F("Enabled"));
     else Serial.println(F("Disabled"));
 
+    Serial.print(F("11) Automatic file rotation (prevents data loss)           : "));
+    if (settings.enableAutomaticFileRotation == true) Serial.println(F("Enabled"));
+    else Serial.println(F("Disabled"));
+
+    Serial.print(F("12) File rotation interval (minutes, 0=disable)            : "));
+    Serial.printf("%d\r\n", settings.fileRotationIntervalMinutes);
+
+    Serial.print(F("13) Use pre-allocated fixed-size files                     : "));
+    if (settings.usePreAllocatedFiles == true) Serial.println(F("Enabled"));
+    else Serial.println(F("Disabled"));
+
+    Serial.print(F("14) Pre-allocated file size (MB, 1-100)                   : "));
+    Serial.printf("%d\r\n", settings.preAllocatedFileSizeMB);
+
     Serial.println(F("x) Exit"));
 
     int incoming = getNumber(menuTimeout); //Timeout after x seconds
@@ -153,6 +167,40 @@ void menuLogRate(bool *prevTerminalOutput)
       settings.openNewLogFile ^= 1;
     else if (incoming == 10)
       settings.frequentFileAccessTimestamps ^= 1;
+    else if (incoming == 11)
+    {
+      settings.enableAutomaticFileRotation ^= 1;
+      recordSettings();
+    }
+    else if (incoming == 12)
+    {
+      Serial.println(F("How many minutes between file rotations? (0 to disable, 1 to 1440):"));
+      uint32_t tempMinutes = getNumber(menuTimeout); //Timeout after x seconds
+      if (tempMinutes > 1440)
+        Serial.println(F("Error: File rotation interval out of range"));
+      else
+      {
+        settings.fileRotationIntervalMinutes = tempMinutes;
+        recordSettings();
+      }
+    }
+    else if (incoming == 13)
+    {
+      settings.usePreAllocatedFiles ^= 1;
+      recordSettings();
+    }
+    else if (incoming == 14)
+    {
+      Serial.println(F("What size should pre-allocated files be? (1 to 100 MB):"));
+      uint32_t tempSize = getNumber(menuTimeout); //Timeout after x seconds
+      if (tempSize < 1 || tempSize > 100)
+        Serial.println(F("Error: File size out of range"));
+      else
+      {
+        settings.preAllocatedFileSizeMB = tempSize;
+        recordSettings();
+      }
+    }
     else if (incoming == STATUS_PRESSED_X)
       return;
     else if (incoming == STATUS_GETNUMBER_TIMEOUT)
