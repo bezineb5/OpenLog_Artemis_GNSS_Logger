@@ -230,9 +230,17 @@ bool createPreAllocatedFile(const char* fileName, uint32_t sizeMB)
   }
   
   // Pre-allocate the file by writing zeros
-  const uint32_t bufferSize = 8192; // 8KB buffer for efficient writing
-  uint8_t zeroBuffer[bufferSize];
-  memset(zeroBuffer, 0, bufferSize);
+  // Reduced buffer size to prevent stack overflow on Artemis
+  const uint32_t bufferSize = 1024; // 1KB buffer instead of 8KB
+  static uint8_t zeroBuffer[bufferSize]; // Static to avoid stack allocation
+  static bool bufferInitialized = false;
+  
+  // Initialize buffer only once
+  if (!bufferInitialized)
+  {
+    memset(zeroBuffer, 0, bufferSize);
+    bufferInitialized = true;
+  }
   
   uint32_t bytesWritten = 0;
   while (bytesWritten < fileSizeBytes)
@@ -260,6 +268,9 @@ bool createPreAllocatedFile(const char* fileName, uint32_t sizeMB)
         Serial.print(sizeMB);
         Serial.println(F(" MB"));
       }
+      
+      // Allow other operations to proceed during long pre-allocation
+      yield();
     }
   }
   
@@ -280,9 +291,16 @@ bool shouldRotatePreAllocatedFile()
   if (!settings.usePreAllocatedFiles)
     return false;
     
+  // Don't check if file is not open or logging is not active
+  if (!online.dataLogging || !online.microSD || !gnssDataFile.isOpen())
+    return false;
+    
   // Check if we're near the end of the file
-  uint32_t currentPosition = gnssDataFile.curPosition();
+  uint32_t currentPosition = 0;
   uint32_t fileSize = settings.preAllocatedFileSizeMB * 1024 * 1024;
+  
+  // Safely get current position with error handling
+  currentPosition = gnssDataFile.curPosition();
   
   // Rotate when we're within 1KB of the end
   return (currentPosition >= (fileSize - 1024));
@@ -299,16 +317,28 @@ bool shouldRotateLogFile()
     return false;
     
   static uint32_t lastRotationTime = 0;
+  static bool timeInitialized = false;
   uint32_t currentTime = millis() / 60000; // Convert to minutes
   
   // If this is the first check, initialize the rotation time
-  if (lastRotationTime == 0)
+  if (!timeInitialized)
   {
     lastRotationTime = currentTime;
+    timeInitialized = true;
     return false;
   }
   
-  uint32_t timeSinceLastRotation = currentTime - lastRotationTime;
+  // Handle millis() overflow (occurs every ~49 days)
+  uint32_t timeSinceLastRotation;
+  if (currentTime >= lastRotationTime)
+  {
+    timeSinceLastRotation = currentTime - lastRotationTime;
+  }
+  else
+  {
+    // Handle overflow case
+    timeSinceLastRotation = (0xFFFFFFFF / 60000) - lastRotationTime + currentTime;
+  }
   
   if (timeSinceLastRotation >= settings.fileRotationIntervalMinutes)
   {
@@ -322,6 +352,15 @@ bool shouldRotateLogFile()
 //Check if we need to rotate the file (time-based or size-based)
 bool shouldRotateFile()
 {
+  // Don't rotate if logging is not active
+  if (!online.dataLogging || !online.microSD)
+    return false;
+    
+  // Don't rotate during critical file operations
+  static bool criticalOperationInProgress = false;
+  if (criticalOperationInProgress)
+    return false;
+    
   // Check pre-allocated file size first (higher priority)
   if (shouldRotatePreAllocatedFile())
   {
@@ -339,8 +378,16 @@ bool shouldRotateFile()
 //Rotate the log file and update the timestamp
 void rotateLogFileIfNeeded()
 {
+  // Prevent multiple simultaneous rotations
+  static bool rotationInProgress = false;
+  
+  if (rotationInProgress)
+    return;
+    
   if (shouldRotateFile())
   {
+    rotationInProgress = true;
+    
     if (settings.printMajorDebugMessages)
     {
       Serial.println(F("Automatic file rotation triggered"));
@@ -354,6 +401,8 @@ void rotateLogFileIfNeeded()
       Serial.print(settings.fileRotationIntervalMinutes);
       Serial.println(F(" minutes"));
     }
+    
+    rotationInProgress = false;
   }
 }
 
@@ -382,11 +431,14 @@ void openNewLogFile()
       Serial.print(F("Closing: "));
       Serial.println(gnssDataFileName);
       storeFinalData();
-      gnssDataFile.sync();
-
-      updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
-
-      gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
+      
+      // Ensure file is properly synced before closing
+      if (gnssDataFile.isOpen())
+      {
+        gnssDataFile.sync();
+        updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
+        gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
+      }
 
       strcpy(gnssDataFileName, findNextAvailableLog(settings.nextDataLogNumber, "dataLog"));
 
