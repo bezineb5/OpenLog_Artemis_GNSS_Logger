@@ -204,85 +204,23 @@ bool detectQwiicDevices()
   return (somethingDetected);
 }
 
-//Create a pre-allocated fixed-size file filled with zeros
+//Create a pre-allocated fixed-size file filled with zeros (safe fallback: no pre-allocation)
 bool createPreAllocatedFile(const char* fileName, uint32_t sizeMB)
 {
+  // Fallback: just open the file for append/write without pre-allocating
+  // This avoids long blocking operations or filesystem edge cases on some SD cards/cores
+  (void)sizeMB; // Unused in fallback
+
   if (settings.printMajorDebugMessages)
   {
-    Serial.print(F("Creating pre-allocated file: "));
-    Serial.print(fileName);
-    Serial.print(F(" Size: "));
-    Serial.print(sizeMB);
-    Serial.println(F(" MB"));
+    Serial.print(F("Creating log file (no pre-allocation): "));
+    Serial.println(fileName);
   }
-  
-  // Calculate file size in bytes
-  uint32_t fileSizeBytes = sizeMB * 1024 * 1024;
-  
-  // Create the file
-  if (gnssDataFile.open(fileName, O_CREAT | O_WRITE) == false)
-  {
-    if (settings.printMajorDebugMessages)
-    {
-      Serial.println(F("Failed to create pre-allocated file"));
-    }
-    return false;
-  }
-  
-  // Pre-allocate the file by writing zeros
-  // Reduced buffer size to prevent stack overflow on Artemis
-  const uint32_t bufferSize = 1024; // 1KB buffer instead of 8KB
-  static uint8_t zeroBuffer[bufferSize]; // Static to avoid stack allocation
-  static bool bufferInitialized = false;
-  
-  // Initialize buffer only once
-  if (!bufferInitialized)
-  {
-    memset(zeroBuffer, 0, bufferSize);
-    bufferInitialized = true;
-  }
-  
-  uint32_t bytesWritten = 0;
-  while (bytesWritten < fileSizeBytes)
-  {
-    uint32_t bytesToWrite = min(bufferSize, fileSizeBytes - bytesWritten);
-    if (gnssDataFile.write(zeroBuffer, bytesToWrite) != bytesToWrite)
-    {
-      if (settings.printMajorDebugMessages)
-      {
-        Serial.println(F("Failed to write zeros to pre-allocated file"));
-      }
-      gnssDataFile.close();
-      return false;
-    }
-    bytesWritten += bytesToWrite;
-    
-    // Update progress every 1MB
-    if (bytesWritten % (1024 * 1024) == 0)
-    {
-      if (settings.printMajorDebugMessages)
-      {
-        Serial.print(F("Pre-allocated "));
-        Serial.print(bytesWritten / (1024 * 1024));
-        Serial.print(F("/"));
-        Serial.print(sizeMB);
-        Serial.println(F(" MB"));
-      }
-      
-      // Allow other operations to proceed during long pre-allocation
-      yield();
-    }
-  }
-  
-  // Seek back to beginning for writing
-  gnssDataFile.seek(0);
-  
-  if (settings.printMajorDebugMessages)
-  {
-    Serial.println(F("Pre-allocated file created successfully"));
-  }
-  
-  return true;
+
+  // O_CREAT - create the file if it does not exist
+  // O_APPEND - seek to the end of the file prior to each write
+  // O_WRITE - open for write
+  return gnssDataFile.open(fileName, O_CREAT | O_APPEND | O_WRITE);
 }
 
 //Check if we've reached the end of the pre-allocated file
@@ -299,7 +237,7 @@ bool shouldRotatePreAllocatedFile()
   uint32_t currentPosition = 0;
   uint32_t fileSize = settings.preAllocatedFileSizeMB * 1024 * 1024;
   
-  // Safely get current position with error handling
+  // Get current position
   currentPosition = gnssDataFile.curPosition();
   
   // Rotate when we're within 1KB of the end
