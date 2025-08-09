@@ -204,23 +204,55 @@ bool detectQwiicDevices()
   return (somethingDetected);
 }
 
-//Create a pre-allocated fixed-size file filled with zeros (safe fallback: no pre-allocation)
+//Create a pre-allocated fixed-size file using SdFat preAllocate; pointer rewound to 0 for immediate writes
 bool createPreAllocatedFile(const char* fileName, uint32_t sizeMB)
 {
-  // Fallback: just open the file for append/write without pre-allocating
-  // This avoids long blocking operations or filesystem edge cases on some SD cards/cores
-  (void)sizeMB; // Unused in fallback
-
   if (settings.printMajorDebugMessages)
   {
-    Serial.print(F("Creating log file (no pre-allocation): "));
-    Serial.println(fileName);
+    Serial.print(F("Creating pre-allocated file: "));
+    Serial.print(fileName);
+    Serial.print(F(" Size: "));
+    Serial.print(sizeMB);
+    Serial.println(F(" MB"));
   }
 
-  // O_CREAT - create the file if it does not exist
-  // O_APPEND - seek to the end of the file prior to each write
-  // O_WRITE - open for write
-  return gnssDataFile.open(fileName, O_CREAT | O_APPEND | O_WRITE);
+  uint32_t fileSizeBytes = sizeMB * 1024UL * 1024UL;
+  if (fileSizeBytes < 1024UL) fileSizeBytes = 1024UL; // Guard
+
+  // Create/Truncate and open for read/write so we can manage size and position
+  if (!gnssDataFile.open(fileName, O_CREAT | O_TRUNC | O_RDWR))
+  {
+    if (settings.printMajorDebugMessages)
+      Serial.println(F("preAlloc: open failed"));
+    return false;
+  }
+
+  // Use SdFat preAllocate to reserve contiguous space and set file size
+  bool ok = gnssDataFile.preAllocate(fileSizeBytes);
+
+  if (!ok)
+  {
+    if (settings.printMajorDebugMessages)
+      Serial.println(F("preAlloc: preAllocate failed"));
+    gnssDataFile.close();
+    return false;
+  }
+
+  // Rewind for writing actual data from the start
+  if (!gnssDataFile.seek(0))
+  {
+    if (settings.printMajorDebugMessages)
+      Serial.println(F("preAlloc: seek(0) failed"));
+    gnssDataFile.close();
+    return false;
+  }
+
+  gnssDataFile.sync();
+
+  if (settings.printMajorDebugMessages)
+    Serial.println(F("Pre-allocated file ready"));
+
+  return true;
 }
 
 //Check if we've reached the end of the pre-allocated file
@@ -373,6 +405,9 @@ void openNewLogFile()
       // Ensure file is properly synced before closing
       if (gnssDataFile.isOpen())
       {
+        // Shrink the file to the actual data length to remove trailing zeros
+        uint32_t usedLength = gnssDataFile.curPosition();
+        gnssDataFile.truncate(usedLength);
         gnssDataFile.sync();
         updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
         gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
