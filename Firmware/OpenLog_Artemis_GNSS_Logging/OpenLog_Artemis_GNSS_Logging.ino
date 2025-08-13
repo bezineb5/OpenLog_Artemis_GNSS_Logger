@@ -595,13 +595,14 @@ static bool watchdogActive = false;
 
 void initWatchdog(uint16_t timeoutSeconds)
 {
-  // Configure watchdog to use LFRC 1024 Hz clock, generate reset on timeout
+  // Configure watchdog to use LFRC 128 Hz clock, generate reset on timeout
   am_hal_wdt_config_t wdtConfig;
-  uint32_t ticks = (uint32_t)timeoutSeconds * 1024U; // 1024 Hz -> ticks per second
+  if (timeoutSeconds == 0) timeoutSeconds = 1;
+  uint32_t ticks = (uint32_t)timeoutSeconds * 128U; // 128 Hz -> ticks per second
   if (ticks > 0xFFFF) ticks = 0xFFFF; // Limit to 16-bit counters
 
-  wdtConfig.ui32Config = AM_HAL_WDT_LFRC_CLK_1024HZ | AM_HAL_WDT_ENABLE | AM_HAL_WDT_RESET_ENABLE;
-  wdtConfig.ui16InterruptCount = (uint16_t)(ticks / 2U); // Optional: halfway interrupt (unused)
+  wdtConfig.ui32Config = AM_HAL_WDT_LFRC_CLK_128HZ | AM_HAL_WDT_ENABLE_RESET; // reset on timeout; no interrupt
+  wdtConfig.ui16InterruptCount = 0; // disable interrupt
   wdtConfig.ui16ResetCount = (uint16_t)ticks;
 
   am_hal_wdt_init(&wdtConfig);
@@ -622,7 +623,7 @@ void haltWatchdog()
 {
   if (watchdogActive)
   {
-    am_hal_wdt_halt();
+    am_hal_wdt_halt(); // available in v2.2.x core
     watchdogActive = false;
   }
 }
