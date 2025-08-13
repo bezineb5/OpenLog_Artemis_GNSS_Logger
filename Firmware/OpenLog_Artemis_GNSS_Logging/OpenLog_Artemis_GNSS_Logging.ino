@@ -169,6 +169,10 @@ const int sdPowerDownDelay = 100; //Delay for this many ms before turning off th
 Apollo3RTC myRTC; //Create instance of RTC class
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+// Watchdog (Apollo3 HAL)
+#include "am_mcu_apollo.h"
+#include "am_hal_wdt.h"
+
 #define MAX_PAYLOAD_SIZE 384 // Override MAX_PAYLOAD_SIZE for getModuleInfo which can return up to 348 bytes
 #define FILE_BUFFER_SIZE 32768
 
@@ -223,6 +227,10 @@ ubxPacket customCfg = {0, 0, 0, 0, 0, customPayload, 0, 0, SFE_UBLOX_PACKET_VALI
 // Function declarations
 void rotateLogFileIfNeeded();
 bool createPreAllocatedFile(const char* fileName, uint32_t sizeMB);
+void initWatchdog(uint16_t timeoutSeconds = 8);
+void feedWatchdog();
+void haltWatchdog();
+void resumeWatchdog();
 
 void setup() {
   //If 3.3V rail drops below 3V, system will power down and maintain RTC
@@ -313,6 +321,10 @@ void setup() {
 
   digitalWrite(PIN_STAT_LED, LOW); // Turn the STAT LED off now that everything is configured
 
+  // Initialize the hardware watchdog according to settings for continuous logging
+  if (settings.enableWatchdog && (settings.usSleepDuration == 0))
+    initWatchdog(settings.watchdogTimeoutSeconds);
+
 //  //If we are immediately going to go to sleep after the first reading then
 //  //first present the user with the config menu in case they need to change something
 //  if (settings.usBetweenReadings == settings.usLoggingDuration)
@@ -326,6 +338,7 @@ void loop() {
   if (Serial.available()) menuMain(); //Present user menu
 
   storeData();
+  if (settings.enableWatchdog) feedWatchdog();
   
   // Check if it's time to rotate the log file
   rotateLogFileIfNeeded();
@@ -575,4 +588,49 @@ extern "C" void am_stimer_cmpr6_isr(void)
 void stopLoggingISR(void)
 {
   stopLoggingSeen = true;
+}
+
+// Watchdog implementation (Ambiq Apollo3 HAL)
+static bool watchdogActive = false;
+
+void initWatchdog(uint16_t timeoutSeconds)
+{
+  // Configure watchdog to use LFRC 1024 Hz clock, generate reset on timeout
+  am_hal_wdt_config_t wdtConfig;
+  uint32_t ticks = (uint32_t)timeoutSeconds * 1024U; // 1024 Hz -> ticks per second
+  if (ticks > 0xFFFF) ticks = 0xFFFF; // Limit to 16-bit counters
+
+  wdtConfig.ui32Config = AM_HAL_WDT_LFRC_CLK_1024HZ | AM_HAL_WDT_ENABLE | AM_HAL_WDT_RESET_ENABLE;
+  wdtConfig.ui16InterruptCount = (uint16_t)(ticks / 2U); // Optional: halfway interrupt (unused)
+  wdtConfig.ui16ResetCount = (uint16_t)ticks;
+
+  am_hal_wdt_init(&wdtConfig);
+  am_hal_wdt_start();
+  am_hal_wdt_restart();
+  watchdogActive = true;
+}
+
+void feedWatchdog()
+{
+  if (watchdogActive)
+  {
+    am_hal_wdt_restart();
+  }
+}
+
+void haltWatchdog()
+{
+  if (watchdogActive)
+  {
+    am_hal_wdt_halt();
+    watchdogActive = false;
+  }
+}
+
+void resumeWatchdog()
+{
+  if (!watchdogActive)
+  {
+    initWatchdog(settings.watchdogTimeoutSeconds);
+  }
 }

@@ -58,6 +58,8 @@ void storeData(void)
       lastDataLogSyncTime = millis();
     }
   }
+  // Feed the watchdog even if GNSS is offline
+  if (settings.enableWatchdog) feedWatchdog();
 }
 
 void storeFinalData(void)

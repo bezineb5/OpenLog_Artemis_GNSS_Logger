@@ -176,6 +176,8 @@ void recordSettingsToFile()
     settingsFile.println("fileRotationIntervalMinutes=" + (String)settings.fileRotationIntervalMinutes);
     settingsFile.println("usePreAllocatedFiles=" + (String)settings.usePreAllocatedFiles);
     settingsFile.println("preAllocatedFileSizeMB=" + (String)settings.preAllocatedFileSizeMB);
+    settingsFile.println("enableWatchdog=" + (String)settings.enableWatchdog);
+    settingsFile.println("watchdogTimeoutSeconds=" + (String)settings.watchdogTimeoutSeconds);
 
     settingsFile.print("GNSS:log="); settingsFile.println(settings.sensor_uBlox.log);
     settingsFile.print("GNSS:powerManagement="); settingsFile.println(settings.sensor_uBlox.powerManagement);
@@ -412,6 +414,10 @@ bool parseLine(char* str) {
     settings.usePreAllocatedFiles = d;
   else if (strcmp(settingName, "preAllocatedFileSizeMB") == 0)
     settings.preAllocatedFileSizeMB = d;
+  else if (strcmp(settingName, "enableWatchdog") == 0)
+    settings.enableWatchdog = d;
+  else if (strcmp(settingName, "watchdogTimeoutSeconds") == 0)
+    settings.watchdogTimeoutSeconds = d;
     
   else if (strcmp(settingName, "GNSS:log") == 0)
     settings.sensor_uBlox.log = d;

@@ -135,6 +135,9 @@ void powerDown()
   am_hal_stimer_config(AM_HAL_STIMER_CFG_CLEAR | AM_HAL_STIMER_CFG_FREEZE);
   am_hal_stimer_config(AM_HAL_STIMER_XTAL_32KHZ);
 
+  // Ensure the watchdog is halted during powerDown
+  haltWatchdog();
+
   while (1) // Stay in deep sleep until we get reset
   {
     am_hal_sysctrl_sleep(AM_HAL_SYSCTRL_SLEEP_DEEP); //Sleep
@@ -202,6 +205,9 @@ void goToSleep()
 
   Serial.flush(); //Finish any prints
   Serial.end(); //Power down UART
+
+  // Pause the watchdog during timed sleep, it will be re-initialized on wake
+  if (settings.enableWatchdog) haltWatchdog();
 
   //Counter/Timer 6 will use the 32kHz clock
   //Calculate how many 32768Hz system ticks we need to sleep for:
@@ -403,6 +409,10 @@ void wakeFromSleep()
     //Module is still online so (re)enable the selected messages
     enableMessages(1100);
   }
+
+  // Resume watchdog if enabled and continuous logging
+  if (settings.enableWatchdog && (settings.usSleepDuration == 0))
+    resumeWatchdog();
 }
 
 void stopLogging(void)

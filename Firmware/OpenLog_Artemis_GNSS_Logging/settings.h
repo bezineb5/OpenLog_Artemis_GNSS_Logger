@@ -95,6 +95,8 @@ struct struct_settings {
   uint32_t fileRotationIntervalMinutes = 60; // Create new log file every X minutes (0 = disable)
   bool usePreAllocatedFiles = true; // If true, pre-allocate fixed-size files filled with zeros
   uint32_t preAllocatedFileSizeMB = 10; // Size of pre-allocated files in MB (1-100)
+  bool enableWatchdog = false; // Enable the hardware watchdog timer
+  uint16_t watchdogTimeoutSeconds = 8; // Watchdog reset timeout in seconds (1-60)
   struct_uBlox sensor_uBlox;
 } settings;
 

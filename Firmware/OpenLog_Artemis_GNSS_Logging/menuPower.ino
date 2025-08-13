@@ -32,6 +32,13 @@ void menuPower()
     Serial.printf("%s\r\n", tempStr);
 
     Serial.println(F("7) Print battery voltage"));
+
+    Serial.print(F("8) Watchdog                               : "));
+    if (settings.enableWatchdog == true) Serial.println(F("Enabled"));
+    else Serial.println(F("Disabled"));
+
+    Serial.print(F("9) Watchdog timeout (s)                    : "));
+    Serial.println(settings.watchdogTimeoutSeconds);
 #endif
 
     Serial.println("x) Exit");
@@ -106,6 +113,35 @@ void menuPower()
         olaftoa(readVIN(), tempStr, 2, sizeof(tempStr) / sizeof(char));
         Serial.printf("%s\r\n", tempStr); // Read and print the battery voltage;
         delay(100);
+      }
+    }
+    else if (incoming == '8')
+    {
+      settings.enableWatchdog ^= 1;
+      if (settings.enableWatchdog && (settings.usSleepDuration == 0))
+      {
+        initWatchdog(settings.watchdogTimeoutSeconds);
+      }
+      else
+      {
+        haltWatchdog();
+      }
+    }
+    else if (incoming == '9')
+    {
+      Serial.println(F("Please enter the new watchdog timeout (seconds, 1-60):"));
+      int64_t temp = getNumber(menuTimeout);
+      if ((temp < 1) || (temp > 60))
+        Serial.println(F("Error: Timeout out of range"));
+      else
+      {
+        settings.watchdogTimeoutSeconds = (uint16_t)temp;
+        if (settings.enableWatchdog && (settings.usSleepDuration == 0))
+        {
+          // Re-init with new timeout
+          haltWatchdog();
+          initWatchdog(settings.watchdogTimeoutSeconds);
+        }
       }
     }
 #endif
