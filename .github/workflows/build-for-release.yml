@@ -46,7 +46,7 @@ jobs:
 
       - name: Get Known Libraries
         run: arduino-cli lib install
-          "SparkFun u-blox GNSS v3"@3.1.2
+          "SparkFun u-blox GNSS Arduino Library"@2.2.27
           "SdFat@2.2.2"
 
       - name: Patch Apollo3 Core

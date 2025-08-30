@@ -138,6 +138,16 @@ bool beginSensors()
       //Set output rate
       gpsSensor_ublox.setMeasurementRate((uint16_t)(settings.usBetweenReadings / 1000ULL));
 
+      // Set power mode if aggressive power management is enabled and the reading interval is greater than 1 second
+      //if (settings.sensor_uBlox.aggressivePowerManagement && settings.usBetweenReadings >= 1000000ULL) {
+      Serial.println(F("Setting power mode to aggressive 1Hz"));
+      uint8_t powerMode = gpsSensor_ublox.getPowerSaveMode();
+      Serial.printf("Current power mode: %d\r\n", powerMode);
+      gpsSensor_ublox.setPowerManagement(SFE_UBLOX_PMS_MODE_AGGRESSIVE_1HZ, 0, 0);
+      powerMode = gpsSensor_ublox.getPowerSaveMode();
+      Serial.printf("New power mode: %d\r\n", powerMode);
+      //}
+
       //Set the HNR rate
       gpsSensor_ublox.setHNRNavigationRate(settings.hnrNavigationRate);
 
@@ -194,6 +204,178 @@ bool detectQwiicDevices()
   return (somethingDetected);
 }
 
+//Create a pre-allocated fixed-size file using SdFat preAllocate; pointer rewound to 0 for immediate writes
+bool createPreAllocatedFile(const char* fileName, uint32_t sizeMB)
+{
+  if (settings.printMajorDebugMessages)
+  {
+    Serial.print(F("Creating pre-allocated file: "));
+    Serial.print(fileName);
+    Serial.print(F(" Size: "));
+    Serial.print(sizeMB);
+    Serial.println(F(" MB"));
+  }
+
+  uint32_t fileSizeBytes = sizeMB * 1024UL * 1024UL;
+  if (fileSizeBytes < 1024UL) fileSizeBytes = 1024UL; // Guard
+
+  // Create/Truncate and open for read/write so we can manage size and position
+  if (!gnssDataFile.open(fileName, O_CREAT | O_TRUNC | O_RDWR))
+  {
+    if (settings.printMajorDebugMessages)
+      Serial.println(F("preAlloc: open failed"));
+    return false;
+  }
+
+  // Use SdFat preAllocate to reserve contiguous space and set file size
+  bool ok = gnssDataFile.preAllocate(fileSizeBytes);
+
+  if (!ok)
+  {
+    if (settings.printMajorDebugMessages)
+      Serial.println(F("preAlloc: preAllocate failed"));
+    gnssDataFile.close();
+    return false;
+  }
+
+  // Rewind for writing actual data from the start
+  if (!gnssDataFile.seek(0))
+  {
+    if (settings.printMajorDebugMessages)
+      Serial.println(F("preAlloc: seek(0) failed"));
+    gnssDataFile.close();
+    return false;
+  }
+
+  gnssDataFile.sync();
+
+  if (settings.printMajorDebugMessages)
+    Serial.println(F("Pre-allocated file ready"));
+
+  return true;
+}
+
+//Check if we've reached the end of the pre-allocated file
+bool shouldRotatePreAllocatedFile()
+{
+  if (!settings.usePreAllocatedFiles)
+    return false;
+    
+  // Don't check if file is not open or logging is not active
+  if (!online.dataLogging || !online.microSD || !gnssDataFile.isOpen())
+    return false;
+    
+  // Check if we're near the end of the file
+  uint32_t currentPosition = 0;
+  uint32_t fileSize = settings.preAllocatedFileSizeMB * 1024 * 1024;
+  
+  // Get current position
+  currentPosition = gnssDataFile.curPosition();
+  
+  // Rotate when we're within 1KB of the end
+  return (currentPosition >= (fileSize - 1024));
+}
+
+//Check if it's time to rotate the log file based on the configured interval
+bool shouldRotateLogFile()
+{
+  if (!settings.enableAutomaticFileRotation || settings.fileRotationIntervalMinutes == 0)
+    return false;
+    
+  // Don't rotate during critical operations
+  if (!online.dataLogging || !online.microSD)
+    return false;
+    
+  static uint32_t lastRotationTime = 0;
+  static bool timeInitialized = false;
+  uint32_t currentTime = millis() / 60000; // Convert to minutes
+  
+  // If this is the first check, initialize the rotation time
+  if (!timeInitialized)
+  {
+    lastRotationTime = currentTime;
+    timeInitialized = true;
+    return false;
+  }
+  
+  // Handle millis() overflow (occurs every ~49 days)
+  uint32_t timeSinceLastRotation;
+  if (currentTime >= lastRotationTime)
+  {
+    timeSinceLastRotation = currentTime - lastRotationTime;
+  }
+  else
+  {
+    // Handle overflow case
+    timeSinceLastRotation = (0xFFFFFFFF / 60000) - lastRotationTime + currentTime;
+  }
+  
+  if (timeSinceLastRotation >= settings.fileRotationIntervalMinutes)
+  {
+    lastRotationTime = currentTime; // Update for next rotation
+    return true;
+  }
+  
+  return false;
+}
+
+//Check if we need to rotate the file (time-based or size-based)
+bool shouldRotateFile()
+{
+  // Don't rotate if logging is not active
+  if (!online.dataLogging || !online.microSD)
+    return false;
+    
+  // Don't rotate during critical file operations
+  static bool criticalOperationInProgress = false;
+  if (criticalOperationInProgress)
+    return false;
+    
+  // Check pre-allocated file size first (higher priority)
+  if (shouldRotatePreAllocatedFile())
+  {
+    if (settings.printMajorDebugMessages)
+    {
+      Serial.println(F("File rotation triggered: reached end of pre-allocated file"));
+    }
+    return true;
+  }
+  
+  // Check time-based rotation
+  return shouldRotateLogFile();
+}
+
+//Rotate the log file and update the timestamp
+void rotateLogFileIfNeeded()
+{
+  // Prevent multiple simultaneous rotations
+  static bool rotationInProgress = false;
+  
+  if (rotationInProgress)
+    return;
+    
+  if (shouldRotateFile())
+  {
+    rotationInProgress = true;
+    
+    if (settings.printMajorDebugMessages)
+    {
+      Serial.println(F("Automatic file rotation triggered"));
+    }
+    
+    openNewLogFile();
+    
+    if (settings.printMajorDebugMessages)
+    {
+      Serial.print(F("File rotated. Next rotation in "));
+      Serial.print(settings.fileRotationIntervalMinutes);
+      Serial.println(F(" minutes"));
+    }
+    
+    rotationInProgress = false;
+  }
+}
+
 //Close the current log file and open a new one
 //This should probably be defined in OpenLog_Artemis_GNSS_Logging as it involves files
 //but it is defined here as it is u-blox-specific
@@ -219,18 +401,35 @@ void openNewLogFile()
       Serial.print(F("Closing: "));
       Serial.println(gnssDataFileName);
       storeFinalData();
-      gnssDataFile.sync();
-
-      updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
-
-      gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
+      
+      // Ensure file is properly synced before closing
+      if (gnssDataFile.isOpen())
+      {
+        // Shrink the file to the actual data length to remove trailing zeros
+        uint32_t usedLength = gnssDataFile.curPosition();
+        gnssDataFile.truncate(usedLength);
+        gnssDataFile.sync();
+        updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
+        gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
+      }
 
       strcpy(gnssDataFileName, findNextAvailableLog(settings.nextDataLogNumber, "dataLog"));
 
-      // O_CREAT - create the file if it does not exist
-      // O_APPEND - seek to the end of the file prior to each write
-      // O_WRITE - open for write
-      if (gnssDataFile.open(gnssDataFileName, O_CREAT | O_APPEND | O_WRITE) == false)
+      // Create the new file - either pre-allocated or normal
+      bool fileCreated = false;
+      if (settings.usePreAllocatedFiles)
+      {
+        fileCreated = createPreAllocatedFile(gnssDataFileName, settings.preAllocatedFileSizeMB);
+      }
+      else
+      {
+        // O_CREAT - create the file if it does not exist
+        // O_APPEND - seek to the end of the file prior to each write
+        // O_WRITE - open for write
+        fileCreated = gnssDataFile.open(gnssDataFileName, O_CREAT | O_APPEND | O_WRITE);
+      }
+
+      if (fileCreated == false)
       {
         if (settings.printMajorDebugMessages == true)
         {

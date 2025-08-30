@@ -61,6 +61,7 @@ struct struct_uBlox {
   uint8_t logNMEAZDA = 0;
   uint8_t ubloxI2Caddress = ADR_UBLOX; //Let's store this just in case we want to change it at some point with CFG-I2C-ADDRESS (0x20510001)
   bool disableNMEAOnUART1 = false; //Set to true to disable NMEA on UART1
+  bool aggressivePowerManagement = true; //Set to true to enable aggressive power management
 };
 
 //This is all the settings that can be set on OpenLog. It's recorded to NVM and the config file.
@@ -90,6 +91,12 @@ struct struct_settings {
   uint8_t hnrNavigationRate = 1; //HNR Navigation Rate (if supported)
   bool printGNSSDebugMessages = false;
   uint8_t qwiicBusPullUps = 0; // Qwiic bus pull-up resistance: 0, 1(.5), 6, 12, 24 kOhms
+  bool enableAutomaticFileRotation = true; // If true, automatically create new log files at regular intervals
+  uint32_t fileRotationIntervalMinutes = 60; // Create new log file every X minutes (0 = disable)
+  bool usePreAllocatedFiles = true; // If true, pre-allocate fixed-size files filled with zeros
+  uint32_t preAllocatedFileSizeMB = 10; // Size of pre-allocated files in MB (1-100)
+  bool enableWatchdog = false; // Enable the hardware watchdog timer
+  uint16_t watchdogTimeoutSeconds = 8; // Watchdog reset timeout in seconds (1-60)
   struct_uBlox sensor_uBlox;
 } settings;
 
