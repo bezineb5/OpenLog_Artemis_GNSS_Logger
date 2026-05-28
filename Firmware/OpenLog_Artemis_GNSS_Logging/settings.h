@@ -94,7 +94,7 @@ struct struct_settings {
   bool enableAutomaticFileRotation = true; // If true, automatically create new log files at regular intervals
   uint32_t fileRotationIntervalMinutes = 60; // Create new log file every X minutes (0 = disable)
   bool usePreAllocatedFiles = true; // If true, pre-allocate fixed-size files filled with zeros
-  uint32_t preAllocatedFileSizeMB = 10; // Size of pre-allocated files in MB (1-100)
+  uint32_t preAllocatedFileSizeMB = 2; // Size of pre-allocated files in MB (1-100)
   bool enableWatchdog = true;
   uint16_t watchdogTimeoutSeconds = 30; // Watchdog reset timeout in seconds (1-60)
   struct_uBlox sensor_uBlox;

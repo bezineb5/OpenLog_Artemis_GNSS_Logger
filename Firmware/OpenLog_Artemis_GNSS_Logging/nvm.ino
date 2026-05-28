@@ -335,7 +335,10 @@ bool parseLine(char* str) {
 
   // Convert string to double.
   double d = strtod(str, &ptr);
-  if (str == ptr || *skipSpace(ptr)) return false;
+  if (str == ptr) return false;
+  // Allow trailing whitespace, CR, or LF
+  char c = *skipSpace(ptr);
+  if (c != '\0' && c != '\r' && c != '\n') return false;
 
   //Serial.printf("d = %lf\r\n", d);
   //Serial.flush();
