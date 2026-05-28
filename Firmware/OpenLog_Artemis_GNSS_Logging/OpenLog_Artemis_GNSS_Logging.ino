@@ -324,13 +324,10 @@ void setup() {
   // Initialize the hardware watchdog according to settings for continuous logging
   if (settings.enableWatchdog && (settings.usSleepDuration == 0))
   {
-    // Ensure minimum timeout of 5 seconds for stability
-    uint16_t timeout = settings.watchdogTimeoutSeconds;
-    if (timeout < 5) timeout = 5;
     Serial.print(F("Starting watchdog with timeout: "));
-    Serial.print(timeout);
+    Serial.print(settings.watchdogTimeoutSeconds);
     Serial.println(F("s"));
-    initWatchdog(timeout);
+    initWatchdog(settings.watchdogTimeoutSeconds);
     feedWatchdog(); // Initial feed to ensure clean start
   }
 
@@ -604,15 +601,28 @@ static bool watchdogActive = false;
 
 void initWatchdog(uint16_t timeoutSeconds)
 {
-  // Configure watchdog to use LFRC 128 Hz clock, generate reset on timeout
+  // Configure watchdog to use LFRC clock, generate reset on timeout
+  // Note: The reset counter is 8-bit (max 255), not 16-bit as the HAL struct suggests.
+  // At 16 Hz: max timeout = 255/16 = 15.9 seconds
+  // At 1 Hz: max timeout = 255/1 = 255 seconds (~4.25 minutes)
+  // At 1/16 Hz: max timeout = 255*16 = 4080 seconds (~68 minutes)
+  //
+  // Use 1 Hz LFRC for best timeout range with integer seconds
   am_hal_wdt_config_t wdtConfig;
   if (timeoutSeconds == 0) timeoutSeconds = 1;
-  uint32_t ticks = (uint32_t)timeoutSeconds * 128U; // 128 Hz -> ticks per second
-  if (ticks > 0xFFFF) ticks = 0xFFFF; // Limit to 16-bit counters
+  
+  // Clamp to max supported by 8-bit register
+  // At 1 Hz: max 255 seconds. Use 1/16 Hz for longer timeouts if needed.
+  uint32_t ticks = timeoutSeconds;
+  if (ticks > 255) ticks = 255;
 
-  wdtConfig.ui32Config = AM_HAL_WDT_LFRC_CLK_128HZ | AM_HAL_WDT_ENABLE_RESET; // reset on timeout; no interrupt
+  // Use 1 Hz LFRC clock - each tick = 1 second
+  wdtConfig.ui32Config = AM_HAL_WDT_LFRC_CLK_1HZ | AM_HAL_WDT_ENABLE_RESET; // reset on timeout; no interrupt
   wdtConfig.ui16InterruptCount = 0; // disable interrupt
   wdtConfig.ui16ResetCount = (uint16_t)ticks;
+
+  // Enable LFRC clock (required for WDT)
+  am_hal_clkgen_control(AM_HAL_CLKGEN_CONTROL_LFRC_START, 0);
 
   am_hal_wdt_init(&wdtConfig);
   am_hal_wdt_start();
