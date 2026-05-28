@@ -323,7 +323,16 @@ void setup() {
 
   // Initialize the hardware watchdog according to settings for continuous logging
   if (settings.enableWatchdog && (settings.usSleepDuration == 0))
-    initWatchdog(settings.watchdogTimeoutSeconds);
+  {
+    // Ensure minimum timeout of 5 seconds for stability
+    uint16_t timeout = settings.watchdogTimeoutSeconds;
+    if (timeout < 5) timeout = 5;
+    Serial.print(F("Starting watchdog with timeout: "));
+    Serial.print(timeout);
+    Serial.println(F("s"));
+    initWatchdog(timeout);
+    feedWatchdog(); // Initial feed to ensure clean start
+  }
 
 //  //If we are immediately going to go to sleep after the first reading then
 //  //first present the user with the config menu in case they need to change something
