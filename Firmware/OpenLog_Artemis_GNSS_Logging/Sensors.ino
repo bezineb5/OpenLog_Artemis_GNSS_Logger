@@ -153,6 +153,9 @@ bool beginSensors()
 
       //Enable the selected messages
       enableMessages(1100);
+      
+      // Save message configuration to non-volatile memory so it persists across resets
+      gpsSensor_ublox.saveConfigSelective(VAL_CFG_SUBSEC_MSG);
 
       qwiicOnline.uBlox = true;
     }
@@ -444,6 +447,9 @@ void openNewLogFile()
 
       //(Re)Enable the selected messages
       enableMessages(1100);
+      
+      // Save message configuration to non-volatile memory so it persists across file rotations
+      gpsSensor_ublox.saveConfigSelective(VAL_CFG_SUBSEC_MSG);
     }
   }
 }
