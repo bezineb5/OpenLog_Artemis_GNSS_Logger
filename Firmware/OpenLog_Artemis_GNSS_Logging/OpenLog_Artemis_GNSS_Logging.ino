@@ -187,6 +187,8 @@ uint64_t measurementStartTime; //Used to calc the elapsed time
 unsigned long lastReadTime = 0; //Used to delay between u-blox reads
 unsigned long lastDataLogSyncTime = 0; //Used to sync SD every second
 bool gnssDataEverReceived = false; //Flag: set true once first GNSS data is stored; used for watchdog grace period
+unsigned long lastGnssHotplugCheck = 0; //Timestamp of last GNSS hot-plug probe (loop)
+const unsigned long gnssHotplugCheckIntervalMs = 5000; //Probe for GNSS every 5s when offline
 const byte menuTimeout = 15; //Menus will exit/timeout after this number of seconds
 bool rtcHasBeenSyncd = false; //Flag to indicate if the RTC been sync'd to GNSS
 bool rtcNeedsSync = true; //Flag to indicate if the RTC needs to be sync'd (after sleep)
@@ -232,6 +234,7 @@ void initWatchdog(uint16_t timeoutSeconds = 8);
 void feedWatchdog();
 void haltWatchdog();
 void resumeWatchdog();
+void gracefulPowerDownSync(void); // Sync+close log file before anticipated power loss (safe from loop context)
 
 void setup() {
   //If 3.3V rail drops below 3V, system will power down and maintain RTC
@@ -348,6 +351,17 @@ void loop() {
   
   checkBattery(); // Check for low battery
 
+  // Poll for power loss: if the power-loss pin is already LOW, do a graceful sync
+  // before the FALLING-edge ISR catches it. This runs in normal (non-interrupt)
+  // context where SD/SPI I/O is safe, minimizing data loss on power failure.
+  // The ISR remains as an emergency fallback for fast brown-outs.
+  if ((online.dataLogging == true) && (digitalRead(PIN_POWER_LOSS) == LOW))
+  {
+    if (settings.printMajorDebugMessages == true)
+      Serial.println(F("Power loss detected (poll): syncing log file"));
+    gracefulPowerDownSync();
+  }
+
   if (Serial.available()) menuMain(); //Present user menu
 
   storeData();
@@ -363,6 +377,24 @@ void loop() {
     // After first data, watchdog is fed only in storeData() when data is actually written,
     // so a genuine data stall will trigger the reset.
     feedWatchdog();
+  }
+  
+  // GNSS hot-plug detection: if the GNSS is offline (not detected at boot, or lost),
+  // periodically probe the I2C address and re-run beginSensors() if it reappears.
+  // This avoids empty pre-allocated files and lets the watchdog grace period end.
+  if (settings.sensor_uBlox.log && (qwiicOnline.uBlox == false) && online.microSD
+      && (millis() - lastGnssHotplugCheck) >= gnssHotplugCheckIntervalMs)
+  {
+    lastGnssHotplugCheck = millis();
+    uint8_t address = settings.sensor_uBlox.ubloxI2Caddress;
+    qwiic.beginTransmission(address);
+    byte status = qwiic.endTransmission();
+    if (status == 0) // Device responded
+    {
+      if (settings.printMajorDebugMessages == true)
+        Serial.println(F("GNSS re-detected on I2C: starting sensors"));
+      beginSensors(); // Brings GNSS online + configures messages
+    }
   }
   
   // Check if it's time to rotate the log file

@@ -280,6 +280,11 @@ bool shouldRotatePreAllocatedFile()
 }
 
 //Check if it's time to rotate the log file based on the configured interval
+//Note: lastRotationTime/timeInitialized are reset by rotateLogFileIfNeeded() after ANY rotation
+// (size-based or time-based) so the time timer restarts with each new file.
+static uint32_t lastRotationTime = 0;
+static bool timeInitialized = false;
+
 bool shouldRotateLogFile()
 {
   if (!settings.enableAutomaticFileRotation || settings.fileRotationIntervalMinutes == 0)
@@ -289,8 +294,6 @@ bool shouldRotateLogFile()
   if (!online.dataLogging || !online.microSD)
     return false;
     
-  static uint32_t lastRotationTime = 0;
-  static bool timeInitialized = false;
   uint32_t currentTime = millis() / 60000; // Convert to minutes
   
   // If this is the first check, initialize the rotation time
@@ -367,6 +370,12 @@ void rotateLogFileIfNeeded()
     }
     
     openNewLogFile();
+    
+    // Reset the time-based rotation timer after ANY rotation (size-based or time-based).
+    // Without this, a size-based rotation leaves lastRotationTime stale, causing the
+    // time-based rotation to fire prematurely on the next file (producing tiny files).
+    lastRotationTime = millis() / 60000;
+    timeInitialized = true;
     
     if (settings.printMajorDebugMessages)
     {

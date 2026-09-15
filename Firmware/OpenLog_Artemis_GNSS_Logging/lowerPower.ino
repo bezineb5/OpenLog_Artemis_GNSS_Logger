@@ -14,28 +14,11 @@ void checkBattery(void)
       {
         // Gracefully powerDown
 
-        //Save files before going to sleep
-        if (online.dataLogging == true)
-        {
-          unsigned long pauseUntil = millis() + 550UL; //Wait > 500ms so we can be sure SD data is sync'd
-          while (millis() < pauseUntil) //While we are pausing, keep writing data to SD
-          {
-            storeData();
-          }
-
-          storeFinalData();
-          gnssDataFile.sync();
-      
-          updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
-      
-          gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
-        }
-
-        delay(sdPowerDownDelay); // Give the SD card time to finish writing ***** THIS IS CRITICAL *****
-
         Serial.println(F("***      LOW BATTERY VOLTAGE DETECTED! GOING INTO POWERDOWN      ***"));
         Serial.println(F("*** PLEASE CHANGE THE POWER SOURCE AND RESET THE OLA TO CONTINUE ***"));
-      
+
+        gracefulPowerDownSync();
+
         Serial.flush(); //Finish any prints
 
         powerDown(); // power down and wait for reset
@@ -47,6 +30,39 @@ void checkBattery(void)
     }    
   }
 #endif
+}
+
+// Gracefully sync and close the log file before an anticipated power loss.
+// Safe to call from normal (non-interrupt) loop context where SPI/SD I/O is allowed.
+// Drains the GNSS buffer, syncs the file, truncates a pre-allocated file to its
+// real data length (removing trailing zeros), then closes it. After this returns
+// the caller should proceed to powerDown() / stop logging.
+void gracefulPowerDownSync(void)
+{
+  if (online.dataLogging == false)
+    return;
+
+  // Give the GNSS a moment to push remaining data into the file buffer, then flush it
+  unsigned long pauseUntil = millis() + 550UL; //Wait > 500ms so we can be sure SD data is sync'd
+  while (millis() < pauseUntil) //While we are pausing, keep writing data to SD
+  {
+    storeData();
+  }
+
+  storeFinalData();
+
+  if (gnssDataFile.isOpen())
+  {
+    // For pre-allocated files, shrink to actual data length to avoid trailing zeros
+    uint32_t usedLength = gnssDataFile.curPosition();
+    if (usedLength > 0)
+      gnssDataFile.truncate(usedLength);
+    gnssDataFile.sync();
+    updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
+    gnssDataFile.close();
+  }
+
+  delay(sdPowerDownDelay); // Give the SD card time to finish writing ***** THIS IS CRITICAL *****
 }
 
 //Power down the entire system but maintain running of RTC
