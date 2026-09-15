@@ -97,6 +97,8 @@ struct struct_settings {
   uint32_t preAllocatedFileSizeMB = 2; // Size of pre-allocated files in MB (1-100)
   bool enableWatchdog = true;
   uint16_t watchdogTimeoutSeconds = 30; // Watchdog reset timeout in seconds (1-60)
+  bool watchdogOnNoData = true; // If true, watchdog triggers on data recording failure instead of code hang
+  uint16_t noDataTimeoutSeconds = 60; // Timeout in seconds for no data before watchdog triggers (1-60)
   struct_uBlox sensor_uBlox;
 } settings;
 

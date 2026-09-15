@@ -186,6 +186,7 @@ SFE_UBLOX_GNSS gpsSensor_ublox;
 uint64_t measurementStartTime; //Used to calc the elapsed time
 unsigned long lastReadTime = 0; //Used to delay between u-blox reads
 unsigned long lastDataLogSyncTime = 0; //Used to sync SD every second
+bool gnssDataEverReceived = false; //Flag: set true once first GNSS data is stored; used for watchdog grace period
 const byte menuTimeout = 15; //Menus will exit/timeout after this number of seconds
 bool rtcHasBeenSyncd = false; //Flag to indicate if the RTC been sync'd to GNSS
 bool rtcNeedsSync = true; //Flag to indicate if the RTC needs to be sync'd (after sleep)
@@ -321,13 +322,19 @@ void setup() {
 
   digitalWrite(PIN_STAT_LED, LOW); // Turn the STAT LED off now that everything is configured
 
+  // Reset watchdog grace-period flag at startup
+  gnssDataEverReceived = false;
+
   // Initialize the hardware watchdog according to settings for continuous logging
   if (settings.enableWatchdog && (settings.usSleepDuration == 0))
   {
+    uint16_t actualTimeout = settings.watchdogOnNoData ? settings.noDataTimeoutSeconds : settings.watchdogTimeoutSeconds;
     Serial.print(F("Starting watchdog with timeout: "));
-    Serial.print(settings.watchdogTimeoutSeconds);
-    Serial.println(F("s"));
-    initWatchdog(settings.watchdogTimeoutSeconds);
+    Serial.print(actualTimeout);
+    Serial.print(F("s (mode: "));
+    Serial.print(settings.watchdogOnNoData ? F("no-data") : F("standard"));
+    Serial.println(F(")"));
+    initWatchdog(actualTimeout);
     feedWatchdog(); // Initial feed to ensure clean start
   }
 
@@ -344,7 +351,19 @@ void loop() {
   if (Serial.available()) menuMain(); //Present user menu
 
   storeData();
-  if (settings.enableWatchdog) feedWatchdog();
+  if (settings.enableWatchdog && settings.watchdogOnNoData == false)
+  {
+    // Standard mode: always feed watchdog
+    feedWatchdog();
+  }
+  else if (settings.enableWatchdog && settings.watchdogOnNoData && gnssDataEverReceived == false)
+  {
+    // No-data mode grace period: feed watchdog until first GNSS data arrives.
+    // This prevents a reset loop during GNSS cold start (TTFF can exceed the watchdog timeout).
+    // After first data, watchdog is fed only in storeData() when data is actually written,
+    // so a genuine data stall will trigger the reset.
+    feedWatchdog();
+  }
   
   // Check if it's time to rotate the log file
   rotateLogFileIfNeeded();
@@ -651,6 +670,9 @@ void resumeWatchdog()
 {
   if (!watchdogActive)
   {
-    initWatchdog(settings.watchdogTimeoutSeconds);
+    // Re-enter grace period: feed watchdog until GNSS data flows again
+    // (prevents reset loop after sleep/wake or GNSS power cycle)
+    gnssDataEverReceived = false;
+    initWatchdog(settings.watchdogOnNoData ? settings.noDataTimeoutSeconds : settings.watchdogTimeoutSeconds);
   }
 }

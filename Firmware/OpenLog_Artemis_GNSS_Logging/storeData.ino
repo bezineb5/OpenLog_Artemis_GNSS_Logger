@@ -31,6 +31,17 @@ void storeData(void)
         gnssDataFile.write(myBuffer, bytesToWrite); // Write exactly packetLength bytes from myBuffer to the ubxDataFile on the SD card
       digitalWrite(PIN_STAT_LED, LOW);
 
+      // Feed watchdog for watchdog on no data feature
+      if (settings.logData && settings.sensor_uBlox.log && online.microSD && online.dataLogging)
+      {
+        gnssDataEverReceived = true; // Mark that data has started flowing (end of grace period)
+        // Feed watchdog only when data is actually written (in watchdogOnNoData mode)
+        if (settings.watchdogOnNoData && settings.enableWatchdog)
+        {
+          feedWatchdog();
+        }
+      }
+
       fileBytesAvailable -= bytesToWrite; // Subtract the number of bytes written
       if (fileBytesAvailable < packetLength) // Check if we should update fileBytesAvailable
         fileBytesAvailable = gpsSensor_ublox.fileBufferAvailable();
@@ -58,8 +69,11 @@ void storeData(void)
       lastDataLogSyncTime = millis();
     }
   }
-  // Feed the watchdog even if GNSS is offline
-  if (settings.enableWatchdog) feedWatchdog();
+  // Feed the watchdog - in standard mode, always feed; in no-data mode, it's fed inside the loop when data is written
+  if (settings.enableWatchdog && settings.watchdogOnNoData == false)
+  {
+    feedWatchdog();
+  }
 }
 
 void storeFinalData(void)

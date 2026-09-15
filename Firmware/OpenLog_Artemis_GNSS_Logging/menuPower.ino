@@ -39,6 +39,13 @@ void menuPower()
 
     Serial.print(F("9) Watchdog timeout (s)                    : "));
     Serial.println(settings.watchdogTimeoutSeconds);
+    
+    Serial.print(F("A) Watchdog on no data                    : "));
+    if (settings.watchdogOnNoData == true) Serial.println(F("Enabled"));
+    else Serial.println(F("Disabled"));
+    
+    Serial.print(F("B) No data timeout (s)                    : "));
+    Serial.println(settings.noDataTimeoutSeconds);
 #endif
 
     Serial.println("x) Exit");
@@ -120,7 +127,9 @@ void menuPower()
       settings.enableWatchdog ^= 1;
       if (settings.enableWatchdog && (settings.usSleepDuration == 0))
       {
-        initWatchdog(settings.watchdogTimeoutSeconds);
+        // Enter grace period and init with mode-appropriate timeout
+        gnssDataEverReceived = false;
+        initWatchdog(settings.watchdogOnNoData ? settings.noDataTimeoutSeconds : settings.watchdogTimeoutSeconds);
       }
       else
       {
@@ -141,6 +150,38 @@ void menuPower()
           // Re-init with new timeout
           haltWatchdog();
           initWatchdog(settings.watchdogTimeoutSeconds);
+        }
+      }
+    }
+    else if (incoming == 'A' || incoming == 'a')
+    {
+      settings.watchdogOnNoData ^= 1;
+      Serial.print(F("Watchdog on no data: "));
+      if (settings.watchdogOnNoData) Serial.println(F("Enabled"));
+      else Serial.println(F("Disabled"));
+      
+      // Reinitialize watchdog with appropriate timeout
+      if (settings.enableWatchdog && (settings.usSleepDuration == 0))
+      {
+        uint16_t actualTimeout = settings.watchdogOnNoData ? settings.noDataTimeoutSeconds : settings.watchdogTimeoutSeconds;
+        haltWatchdog();
+        initWatchdog(actualTimeout);
+      }
+    }
+    else if (incoming == 'B' || incoming == 'b')
+    {
+      Serial.println(F("Please enter the new no data timeout (seconds, 1-60):"));
+      int64_t temp = getNumber(menuTimeout);
+      if ((temp < 1) || (temp > 60))
+        Serial.println(F("Error: Timeout out of range"));
+      else
+      {
+        settings.noDataTimeoutSeconds = (uint16_t)temp;
+        if (settings.enableWatchdog && settings.watchdogOnNoData && (settings.usSleepDuration == 0))
+        {
+          // Re-init with new timeout
+          haltWatchdog();
+          initWatchdog(settings.noDataTimeoutSeconds);
         }
       }
     }
