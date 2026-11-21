@@ -46,6 +46,9 @@ struct struct_healthBreadcrumb
 // Defined in health.ino in a section that survives resets (not power cycles).
 extern struct_healthBreadcrumb healthBreadcrumb;
 
+// Cumulative count of NMEA sentences received with a bad checksum (callbacks.ino)
+extern uint32_t healthNmeaBadChecksums;
+
 void healthPhase(uint32_t phase);
 void healthArmEarlyWatchdog(void);
 void healthOnBoot(void);

@@ -77,6 +77,8 @@ static int healthNVMOffset(void)
 // Session state
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
+uint32_t healthNmeaBadChecksums = 0; //Incremented by processNMEA in callbacks.ino
+
 static uint32_t healthLoops = 0;
 static uint32_t healthLastTelemetryMs = 0;
 static uint32_t healthSessionMaxWriteUs = 0;
@@ -455,7 +457,7 @@ void healthOnBoot(void)
 
 static const char healthTelemetryHeader[] =
   "#uptime_ms,rtc_utc,log_file,gps_buf_now,gps_buf_max,free_ram,"
-  "sd_writes,sd_syncs,sd_max_stall_us,loops,wdt_feeds,reset_raw";
+  "sd_writes,sd_syncs,sd_max_stall_us,loops,wdt_feeds,reset_raw,nmea_bad_cksum_total";
 
 static void healthWriteTelemetry(void)
 {
@@ -468,7 +470,7 @@ static void healthWriteTelemetry(void)
 
   char line[256];
   snprintf(line, sizeof(line),
-           "%lu,%s,%s,%u,%u,%lu,%lu,%lu,%lu,%lu,%lu,0x%08lX",
+           "%lu,%s,%s,%u,%u,%lu,%lu,%lu,%lu,%lu,%lu,0x%08lX,%lu",
            (unsigned long)millis(),
            rtc,
            (gnssDataFileName[0] == 0) ? "-" : gnssDataFileName,
@@ -480,7 +482,8 @@ static void healthWriteTelemetry(void)
            (unsigned long)healthSessionMaxWriteUs,
            (unsigned long)healthLoops,
            (unsigned long)healthBreadcrumb.feeds,
-           (unsigned long)healthResetStatus());
+           (unsigned long)healthResetStatus(),
+           (unsigned long)healthNmeaBadChecksums);
 
   healthAppendLine(HEALTH_TELEMETRY_FILE, healthTelemetryHeader, line);
 
