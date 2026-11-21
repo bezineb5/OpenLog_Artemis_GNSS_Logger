@@ -258,6 +258,93 @@ bool createPreAllocatedFile(const char* fileName, uint32_t sizeMB)
   return true;
 }
 
+//Re-open an existing pre-allocated log file WITHOUT truncating it, and position
+//the write cursor after the last real data, so logging resumes as an append.
+//If the previous session shut down uncleanly (crash, brownout), the unused tail
+//of the pre-allocated file is still padded with zeros: that padding is trimmed
+//back (in 512-byte sectors, but only if the run is at least 4 KB so genuine
+//trailing zero bytes in real data are never cut) and logging then continues
+//exactly where the data left off. A file whose contents are entirely padding is
+//re-used from the start.
+bool reopenPreAllocatedFile(const char* fileName)
+{
+  if (settings.printMajorDebugMessages)
+  {
+    Serial.print(F("Re-opening existing log file (append): "));
+    Serial.println(fileName);
+  }
+
+  //Open without O_TRUNC so the existing data survives
+  if (!gnssDataFile.open(fileName, O_RDWR))
+  {
+    if (settings.printMajorDebugMessages)
+      Serial.println(F("preAlloc: reopen failed"));
+    return false;
+  }
+
+  uint32_t size = gnssDataFile.fileSize();
+
+  //Count trailing 512-byte sectors that are entirely zero (the padding)
+  uint8_t buf[512];
+  uint32_t pos = size;
+  uint32_t zeroSectors = 0;
+  while (pos >= sizeof(buf))
+  {
+    pos -= sizeof(buf);
+    if (gnssDataFile.seek(pos) == false)
+      break;
+    if (gnssDataFile.read(buf, sizeof(buf)) != (int)sizeof(buf))
+      break;
+    bool allZero = true;
+    for (uint16_t i = 0; i < sizeof(buf); i++)
+    {
+      if (buf[i] != 0)
+      {
+        allZero = false;
+        break;
+      }
+    }
+    if (allZero == false)
+      break;
+    zeroSectors++;
+  }
+
+  //Trim the padding away - but only a run of at least 4 KB (8 sectors)
+  uint32_t paddingBytes = 0;
+  if (zeroSectors >= 8)
+    paddingBytes = zeroSectors * sizeof(buf);
+
+  uint32_t dataEnd = size - paddingBytes;
+  if (paddingBytes > 0)
+  {
+    if (settings.printMajorDebugMessages)
+    {
+      Serial.print(F("Trimming "));
+      Serial.print(paddingBytes);
+      Serial.println(F(" bytes of pre-allocated padding"));
+    }
+    if (gnssDataFile.truncate(dataEnd) == false)
+    {
+      gnssDataFile.close();
+      return false;
+    }
+  }
+
+  //Position the write cursor after the real data
+  if (gnssDataFile.seek(dataEnd) == false)
+  {
+    gnssDataFile.close();
+    return false;
+  }
+
+  gnssDataFile.sync();
+
+  if (settings.printMajorDebugMessages)
+    Serial.println(F("Pre-allocated file re-opened for append"));
+
+  return true;
+}
+
 //Check if we've reached the end of the pre-allocated file
 bool shouldRotatePreAllocatedFile()
 {

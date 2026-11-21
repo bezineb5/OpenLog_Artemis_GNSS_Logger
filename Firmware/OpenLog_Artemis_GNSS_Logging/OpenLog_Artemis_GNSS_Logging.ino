@@ -231,6 +231,7 @@ ubxPacket customCfg = {0, 0, 0, 0, 0, customPayload, 0, 0, SFE_UBLOX_PACKET_VALI
 // Function declarations
 void rotateLogFileIfNeeded();
 bool createPreAllocatedFile(const char* fileName, uint32_t sizeMB);
+bool reopenPreAllocatedFile(const char* fileName); // Append-mode re-open of an existing pre-allocated log file
 void initWatchdog(uint16_t timeoutSeconds = 8);
 void feedWatchdog();
 void haltWatchdog();
@@ -566,7 +567,14 @@ void beginDataLogging()
     bool fileCreated = false;
     if (settings.usePreAllocatedFiles)
     {
-      fileCreated = createPreAllocatedFile(gnssDataFileName, settings.preAllocatedFileSizeMB);
+      // Only pre-allocate a genuinely new file. If the file already exists
+      // (re-opening after sleep / stop with openNewLogFile disabled), open it
+      // WITHOUT truncation and resume as an append - otherwise the wake would
+      // erase everything logged into the file before the sleep.
+      if (sd.exists(gnssDataFileName))
+        fileCreated = reopenPreAllocatedFile(gnssDataFileName);
+      else
+        fileCreated = createPreAllocatedFile(gnssDataFileName, settings.preAllocatedFileSizeMB);
     }
     else
     {
