@@ -425,6 +425,8 @@ void openNewLogFile()
         gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
       }
 
+      healthMarkSessionClean(); // The previous file was closed properly
+
       strcpy(gnssDataFileName, findNextAvailableLog(settings.nextDataLogNumber, "dataLog"));
 
       // Create the new file - either pre-allocated or normal
@@ -453,6 +455,9 @@ void openNewLogFile()
       }
 
       updateDataFileCreate(&gnssDataFile); //Update the file create time stamp
+
+      healthMarkSessionOpen(gnssDataFileName);
+      healthBreadcrumb.phase = HEALTH_PHASE_LOOP;
 
       //(Re)Enable the selected messages
       enableMessages(1100);
@@ -493,6 +498,8 @@ void closeLogFile()
       updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
 
       gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
+
+      healthMarkSessionClean();
     }
   }
 }

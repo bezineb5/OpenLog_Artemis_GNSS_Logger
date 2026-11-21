@@ -62,6 +62,8 @@ void gracefulPowerDownSync(void)
     gnssDataFile.close();
   }
 
+  healthMarkSessionClean();
+
   delay(sdPowerDownDelay); // Give the SD card time to finish writing ***** THIS IS CRITICAL *****
 }
 
@@ -152,6 +154,7 @@ void powerDown()
   am_hal_stimer_config(AM_HAL_STIMER_XTAL_32KHZ);
 
   // Ensure the watchdog is halted during powerDown
+  healthPhase(HEALTH_PHASE_POWER_DOWN);
   haltWatchdog();
 
   while (1) // Stay in deep sleep until we get reset
@@ -197,6 +200,8 @@ void goToSleep()
 
     gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
 
+    healthMarkSessionClean();
+
     delay(sdPowerDownDelay); // Give the SD card time to finish writing ***** THIS IS CRITICAL *****
   }
 
@@ -224,6 +229,7 @@ void goToSleep()
 
   // Pause the watchdog during timed sleep, it will be re-initialized on wake
   if (settings.enableWatchdog) haltWatchdog();
+  healthPhase(HEALTH_PHASE_SLEEP);
 
   //Counter/Timer 6 will use the 32kHz clock
   //Calculate how many 32768Hz system ticks we need to sleep for:
@@ -459,6 +465,8 @@ void stopLogging(void)
 
     gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
   }
+
+  healthMarkSessionClean();
 
   Serial.print("Logging is stopped. Please reset OpenLog Artemis and open a terminal at ");
   Serial.print((String)settings.serialTerminalBaudRate);

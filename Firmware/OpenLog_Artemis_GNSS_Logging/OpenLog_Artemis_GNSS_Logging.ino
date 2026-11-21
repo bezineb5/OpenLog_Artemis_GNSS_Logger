@@ -261,13 +261,22 @@ void setup() {
   Serial.begin(115200); //Default for initial debug messages if necessary
   Serial.println();
 
+  // The boot path used to run with no watchdog at all (it was only started at
+  // the very end of setup), which is exactly where a hang leaves the STAT LED
+  // stuck on forever. Arm a generous one now; it is re-configured below once
+  // the user's settings are known.
+  healthPhase(HEALTH_PHASE_SETUP_START);
+  healthArmEarlyWatchdog();
+
   EEPROM.init();
 
   SPI.begin(); //Needed if SD is disabled
 
+  healthPhase(HEALTH_PHASE_SD_BEGIN);
   beginSD(); //285 - 293ms
   
   loadSettings(); //50 - 250ms
+  healthPhase(HEALTH_PHASE_SETTINGS_LOADED);
 
   Serial.flush(); //Complete any previous prints
   Serial.begin(settings.serialTerminalBaudRate);
@@ -294,7 +303,12 @@ void setup() {
 
   analogReadResolution(14); //Increase from default of 10
 
+  // Write the boot record before we touch the log file, so that a hang or
+  // reset while creating / pre-allocating the log file is still recorded.
+  healthOnBoot();
+
   beginDataLogging(); //180ms
+  healthPhase(HEALTH_PHASE_DATA_LOGGING);
 
   disableIMU(); //Disable IMU
 
@@ -319,6 +333,7 @@ void setup() {
 
   if (beginSensors() == true) Serial.println(F("GNSS online"));
   else Serial.println(F("GNSS offline"));
+  healthPhase(HEALTH_PHASE_SENSORS);
 
   //If we are sleeping between readings then we cannot rely on millis() as it is powered down. Used RTC instead.
   measurementStartTime = rtcMillis();
@@ -327,6 +342,7 @@ void setup() {
 
   // Reset watchdog grace-period flag at startup
   gnssDataEverReceived = false;
+  healthPhase(HEALTH_PHASE_READY);
 
   // Initialize the hardware watchdog according to settings for continuous logging
   if (settings.enableWatchdog && (settings.usSleepDuration == 0))
@@ -348,7 +364,9 @@ void setup() {
 }
 
 void loop() {
-  
+
+  healthTick(); // Heartbeat + periodic HEALTH.CSV line (also feeds nothing)
+
   checkBattery(); // Check for low battery
 
   // Poll for power loss: if the power-loss pin is already LOW, do a graceful sync
@@ -566,6 +584,10 @@ void beginDataLogging()
     updateDataFileCreate(&gnssDataFile); //Update the data file creation time stamp
 
     online.dataLogging = true;
+
+    // Remember (across resets) that this file was left open. If the next boot
+    // reports sessionOpen=1, the previous run did not shut down cleanly.
+    healthMarkSessionOpen(gnssDataFileName);
   }
   else
     online.dataLogging = false;
@@ -686,6 +708,7 @@ void feedWatchdog()
   if (watchdogActive)
   {
     am_hal_wdt_restart();
+    healthNoteFeed();
   }
 }
 

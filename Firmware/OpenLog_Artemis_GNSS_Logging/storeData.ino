@@ -27,8 +27,13 @@ void storeData(void)
       gpsSensor_ublox.extractFileBufferData((uint8_t *)&myBuffer, bytesToWrite); // Extract exactly bytesToWrite bytes from the UBX file buffer and put them into myBuffer
   
       digitalWrite(PIN_STAT_LED, HIGH);
+      healthBreadcrumb.phase = HEALTH_PHASE_SD_WRITE; // Crash breadcrumb: "we are inside an SD write"
+      uint32_t writeStartUs = micros();
       if (settings.logData && settings.sensor_uBlox.log && online.microSD && online.dataLogging)
         gnssDataFile.write(myBuffer, bytesToWrite); // Write exactly packetLength bytes from myBuffer to the ubxDataFile on the SD card
+      uint32_t writeElapsedUs = micros() - writeStartUs;
+      healthNoteWrite(writeElapsedUs, bytesToWrite);
+      healthBreadcrumb.phase = HEALTH_PHASE_LOOP;
       digitalWrite(PIN_STAT_LED, LOW);
 
       // Feed watchdog for watchdog on no data feature
@@ -48,10 +53,13 @@ void storeData(void)
     }
   
     static uint16_t oldMaxBufferBytes = 0;
-  
+
+    healthNoteBuffer(gpsSensor_ublox.fileBufferAvailable());
+
     if (settings.printMajorDebugMessages == true)
     {
       uint16_t maxBufferBytes = gpsSensor_ublox.getMaxFileBufferAvail(); // Get how full the file buffer has been (not how full it is now)
+      healthNoteBuffer(maxBufferBytes);
   
       if (maxBufferBytes > oldMaxBufferBytes)
       {
@@ -64,7 +72,9 @@ void storeData(void)
     // Sync logged data and update the access timestamp
     if ((settings.frequentFileAccessTimestamps) && (millis() > (lastDataLogSyncTime + 1000)))
     {
+      uint32_t syncStartUs = micros();
       gnssDataFile.sync();
+      healthNoteSync(micros() - syncStartUs);
       updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
       lastDataLogSyncTime = millis();
     }
@@ -96,8 +106,12 @@ void storeFinalData(void)
       gpsSensor_ublox.extractFileBufferData((uint8_t *)&myBuffer, bytesToWrite); // Extract bytes from the UBX file buffer and put them into myBuffer
   
       digitalWrite(PIN_STAT_LED, HIGH);
+      healthBreadcrumb.phase = HEALTH_PHASE_SD_WRITE;
+      uint32_t finalWriteStartUs = micros();
       if (settings.logData && settings.sensor_uBlox.log && online.microSD && online.dataLogging)
         gnssDataFile.write(myBuffer, bytesToWrite); // Write exactly bytesToWrite bytes from myBuffer to the ubxDataFile on the SD card
+      healthNoteWrite(micros() - finalWriteStartUs, bytesToWrite);
+      healthBreadcrumb.phase = HEALTH_PHASE_LOOP;
       digitalWrite(PIN_STAT_LED, LOW);
     }
   }
