@@ -43,11 +43,9 @@ bool beginSensors()
           if (getModuleInfo(1100) == false) // Try to get the module info
           {
             if (settings.printMajorDebugMessages == true)
-            {
               Serial.println(F("beginSensors: third getModuleInfo call failed! Giving up..."));
-              qwiicOnline.uBlox = false;
-              return (false);
-            }
+            qwiicOnline.uBlox = false;
+            return (false); //Give up regardless of the debug setting
           }
         }
       }
@@ -205,6 +203,46 @@ bool detectQwiicDevices()
   }
 
   return (somethingDetected);
+}
+
+//Hard recovery for an unresponsive GNSS module: cut the Qwiic rail the module
+//runs from, let it fully discharge (the SAM-M8Q's backup supply rides the same
+//rail, so this is a true cold start), power it back up, restart the I2C
+//peripheral and re-detect from scratch. Probing or reconfiguring alone cannot
+//revive a module that latched its I2C bus - e.g. when the MCU was reset
+//mid-transaction - and removing its power is the only guaranteed fix.
+//The WDT is kept fed during the power-down window so a no-data watchdog does
+//not reset the MCU half way through the recovery.
+void hardResetGNSS(void)
+{
+  if (settings.printMajorDebugMessages == true)
+    Serial.println(F("GNSS recovery: hard Qwiic power cycle"));
+
+  healthGnssPowerCycles++; //Recorded in HEALTH.CSV (gnss_pwr_cycles_total)
+
+  qwiicOnline.uBlox = false;
+  gnssDataEverReceived = false; //Re-enter the watchdog grace period until data flows again
+  lastGnssDataWriteMs = millis(); //Don't insta-retrigger the stall detector while the module reboots
+
+  qwiicPowerOff();
+
+  unsigned long powerUpAt = millis() + 500UL; //Let the module fully discharge
+  while (millis() < powerUpAt)
+  {
+    feedWatchdog();
+    delay(10);
+  }
+
+  beginQwiic(); //Powers the rail, qwiic.begin(), pull-ups - also restarts the Artemis I2C peripheral
+
+  unsigned long readyAt = millis() + 100UL; //Give the module a moment to boot
+  while (millis() < readyAt)
+  {
+    feedWatchdog();
+    delay(10);
+  }
+
+  beginSensors(); //Full re-detect and re-configure. Sets qwiicOnline.uBlox on success.
 }
 
 //Create a pre-allocated fixed-size file using SdFat preAllocate; pointer rewound to 0 for immediate writes

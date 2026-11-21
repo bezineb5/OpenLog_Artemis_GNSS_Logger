@@ -38,11 +38,12 @@
 
 #define HEALTH_BREADCRUMB_MAGIC 0x42434F4EUL // 'BCON'
 
-// .noinit is not cleared by the C runtime, so a watchdog reset leaves it intact.
-// (On the Apollo3 (ELF) this lands in an uninitialised RAM section. Guarded so the
-// file can also be syntax-checked on a host compiler.)
+// The core's linker script (0xC000.ld) reserves .uninitialized as a NOLOAD
+// section that the C runtime does not clear, so a watchdog reset leaves it
+// intact. (.noinit is NOT defined by that script - an orphan section there
+// ends up cleared at startup, which the field data confirmed.)
 #if defined(__arm__)
-#define HEALTH_NOINIT __attribute__((section(".noinit"), used))
+#define HEALTH_NOINIT __attribute__((section(".uninitialized"), used))
 #else
 #define HEALTH_NOINIT
 #endif
@@ -78,6 +79,7 @@ static int healthNVMOffset(void)
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 uint32_t healthNmeaBadChecksums = 0; //Incremented by processNMEA in callbacks.ino
+uint32_t healthGnssPowerCycles = 0; //Incremented by hardResetGNSS in Sensors.ino
 
 static uint32_t healthLoops = 0;
 static uint32_t healthLastTelemetryMs = 0;
@@ -142,6 +144,18 @@ const char *healthResetFlags(uint32_t status)
 #endif
 #ifdef RSTGEN_STAT_WDRSTAT_Msk
     { RSTGEN_STAT_WDRSTAT_Msk,  "WDT" },
+#endif
+#ifdef RSTGEN_STAT_BOUSTAT_Msk
+    { RSTGEN_STAT_BOUSTAT_Msk,  "BOU" }, //Unregulated supply brownout
+#endif
+#ifdef RSTGEN_STAT_BOCSTAT_Msk
+    { RSTGEN_STAT_BOCSTAT_Msk,  "BOC" }, //Core regulator brownout
+#endif
+#ifdef RSTGEN_STAT_BOFSTAT_Msk
+    { RSTGEN_STAT_BOFSTAT_Msk,  "BOF" }, //Memory regulator brownout
+#endif
+#ifdef RSTGEN_STAT_BOBSTAT_Msk
+    { RSTGEN_STAT_BOBSTAT_Msk,  "BOB" }, //BLE/Burst regulator brownout
 #endif
     { 0, 0 }
   };
@@ -260,18 +274,20 @@ void healthNoteFeed(void)
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-// Free RAM (heap-to-stack gap)
+// Free RAM: headroom between the current heap end and the linker-reserved heap
+// limit (__HeapLimit, set by the core's linker script). The old heap-to-stack
+// delta read 0 on this core because mbed places its heap above the stack gap.
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 extern "C" void *sbrk(intptr_t i);
+extern "C" char __HeapLimit[]; //Linker symbol: top of the heap region
 
 uint32_t healthFreeRam(void)
 {
-  char marker;
   char *heapEnd = (char *)sbrk(0);
   if (heapEnd == NULL)
     return 0;
-  int32_t freeBytes = (int32_t)((char *)&marker - heapEnd);
+  int32_t freeBytes = (int32_t)(__HeapLimit - heapEnd);
   return (freeBytes > 0) ? (uint32_t)freeBytes : 0;
 }
 
@@ -457,7 +473,7 @@ void healthOnBoot(void)
 
 static const char healthTelemetryHeader[] =
   "#uptime_ms,rtc_utc,log_file,gps_buf_now,gps_buf_max,free_ram,"
-  "sd_writes,sd_syncs,sd_max_stall_us,loops,wdt_feeds,reset_raw,nmea_bad_cksum_total";
+  "sd_writes,sd_syncs,sd_max_stall_us,loops,wdt_feeds,reset_raw,nmea_bad_cksum_total,gnss_pwr_cycles_total";
 
 static void healthWriteTelemetry(void)
 {
@@ -470,7 +486,7 @@ static void healthWriteTelemetry(void)
 
   char line[256];
   snprintf(line, sizeof(line),
-           "%lu,%s,%s,%u,%u,%lu,%lu,%lu,%lu,%lu,%lu,0x%08lX,%lu",
+           "%lu,%s,%s,%u,%u,%lu,%lu,%lu,%lu,%lu,%lu,0x%08lX,%lu,%lu",
            (unsigned long)millis(),
            rtc,
            (gnssDataFileName[0] == 0) ? "-" : gnssDataFileName,
@@ -483,7 +499,8 @@ static void healthWriteTelemetry(void)
            (unsigned long)healthLoops,
            (unsigned long)healthBreadcrumb.feeds,
            (unsigned long)healthResetStatus(),
-           (unsigned long)healthNmeaBadChecksums);
+           (unsigned long)healthNmeaBadChecksums,
+           (unsigned long)healthGnssPowerCycles);
 
   healthAppendLine(HEALTH_TELEMETRY_FILE, healthTelemetryHeader, line);
 

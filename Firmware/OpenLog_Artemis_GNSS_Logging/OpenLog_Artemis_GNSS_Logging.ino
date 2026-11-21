@@ -190,6 +190,10 @@ unsigned long lastDataLogSyncTime = 0; //Used to sync SD every second
 bool gnssDataEverReceived = false; //Flag: set true once first GNSS data is stored; used for watchdog grace period
 unsigned long lastGnssHotplugCheck = 0; //Timestamp of last GNSS hot-plug probe (loop)
 const unsigned long gnssHotplugCheckIntervalMs = 5000; //Probe for GNSS every 5s when offline
+unsigned long lastGnssDataWriteMs = 0; //millis() when GNSS data was last written to SD (stall detection)
+unsigned long gnssOfflineSinceMs = 0;  //Start of the current offline window (0 = GNSS online)
+const unsigned long gnssOnlineStallMs = 45000UL;      //Hard power-cycle after 45s of no data while the GNSS is online
+const unsigned long gnssOfflineHardResetMs = 60000UL; //Hard power-cycle after 60s of failed I2C probes
 const byte menuTimeout = 15; //Menus will exit/timeout after this number of seconds
 bool rtcHasBeenSyncd = false; //Flag to indicate if the RTC been sync'd to GNSS
 bool rtcNeedsSync = true; //Flag to indicate if the RTC needs to be sync'd (after sleep)
@@ -238,6 +242,7 @@ void haltWatchdog();
 void resumeWatchdog();
 void gracefulPowerDownSync(void); // Sync+close log file before anticipated power loss (safe from loop context)
 void closeDataFileGracefully(uint32_t drainMs); // Single shared close path for all log-file shutdowns
+void hardResetGNSS(void); // Hard power-cycle of the Qwiic rail to recover an unresponsive GNSS
 
 void setup() {
   //If 3.3V rail drops below 3V, system will power down and maintain RTC
@@ -400,12 +405,26 @@ void loop() {
     feedWatchdog();
   }
   
+  // GNSS stall detection (continuous logging only): the module is online but
+  // has stopped delivering data (hung while still ACKing on I2C). Power-cycle
+  // it before the no-data watchdog timeout fires and resets the whole MCU.
+  if (settings.sensor_uBlox.log && qwiicOnline.uBlox && online.dataLogging
+      && settings.usSleepDuration == 0 && gnssDataEverReceived
+      && (lastGnssDataWriteMs > 0) && (millis() - lastGnssDataWriteMs) >= gnssOnlineStallMs)
+  {
+    if (settings.printMajorDebugMessages == true)
+      Serial.println(F("GNSS stall detected: no data written for 45s. Hard power cycle."));
+    hardResetGNSS();
+  }
+
   // GNSS hot-plug detection: if the GNSS is offline (not detected at boot, or lost),
   // periodically probe the I2C address and re-run beginSensors() if it reappears.
   // This avoids empty pre-allocated files and lets the watchdog grace period end.
   if (settings.sensor_uBlox.log && (qwiicOnline.uBlox == false) && online.microSD
       && (millis() - lastGnssHotplugCheck) >= gnssHotplugCheckIntervalMs)
   {
+    if (gnssOfflineSinceMs == 0) //Going offline: start the recovery window
+      gnssOfflineSinceMs = millis();
     lastGnssHotplugCheck = millis();
     uint8_t address = settings.sensor_uBlox.ubloxI2Caddress;
     qwiic.beginTransmission(address);
@@ -416,7 +435,19 @@ void loop() {
         Serial.println(F("GNSS re-detected on I2C: starting sensors"));
       beginSensors(); // Brings GNSS online + configures messages
     }
+    else if ((gnssOfflineSinceMs > 0) && (millis() - gnssOfflineSinceMs) >= gnssOfflineHardResetMs)
+    {
+      //The module is not responding and probing has not revived it: hard power
+      //cycle. A module that latched its I2C bus (e.g. when the MCU was reset
+      //mid-transaction) can only be recovered by removing its power.
+      gnssOfflineSinceMs = millis(); //Escalate: next attempt no sooner than another full window
+      hardResetGNSS();
+    }
   }
+
+  //Restart the offline window whenever the GNSS is (back) online
+  if (qwiicOnline.uBlox == true)
+    gnssOfflineSinceMs = 0;
   
   // Check if it's time to rotate the log file
   rotateLogFileIfNeeded();

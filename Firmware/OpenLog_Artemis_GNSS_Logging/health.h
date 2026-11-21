@@ -49,6 +49,9 @@ extern struct_healthBreadcrumb healthBreadcrumb;
 // Cumulative count of NMEA sentences received with a bad checksum (callbacks.ino)
 extern uint32_t healthNmeaBadChecksums;
 
+// Cumulative count of GNSS hard power cycles (Sensors.ino hardResetGNSS)
+extern uint32_t healthGnssPowerCycles;
+
 void healthPhase(uint32_t phase);
 void healthArmEarlyWatchdog(void);
 void healthOnBoot(void);

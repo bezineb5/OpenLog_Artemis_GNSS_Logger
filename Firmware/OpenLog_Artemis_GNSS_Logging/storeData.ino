@@ -40,6 +40,7 @@ void storeData(void)
       if (settings.logData && settings.sensor_uBlox.log && online.microSD && online.dataLogging)
       {
         gnssDataEverReceived = true; // Mark that data has started flowing (end of grace period)
+        lastGnssDataWriteMs = millis(); // Age of this timestamp drives the GNSS stall detector (hardResetGNSS)
         // Feed watchdog only when data is actually written (in watchdogOnNoData mode)
         if (settings.watchdogOnNoData && settings.enableWatchdog)
         {
