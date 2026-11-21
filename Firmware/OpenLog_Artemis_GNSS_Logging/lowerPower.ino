@@ -32,21 +32,24 @@ void checkBattery(void)
 #endif
 }
 
-// Gracefully sync and close the log file before an anticipated power loss.
-// Safe to call from normal (non-interrupt) loop context where SPI/SD I/O is allowed.
-// Drains the GNSS buffer, syncs the file, truncates a pre-allocated file to its
-// real data length (removing trailing zeros), then closes it. After this returns
-// the caller should proceed to powerDown() / stop logging.
-void gracefulPowerDownSync(void)
+// Drains the last of the GNSS data, then syncs, truncates and closes the log file.
+// Single implementation shared by every close path: power-loss, stop-button,
+// sleep, rotation (openNewLogFile), closeLogFile (menu) and resetGNSS.
+// drainMs: how long to keep logging while the last data settles into the file
+// buffer (550ms normally, 2100ms on paths that also reconfigure the GNSS).
+void closeDataFileGracefully(uint32_t drainMs)
 {
   if (online.dataLogging == false)
     return;
 
   // Give the GNSS a moment to push remaining data into the file buffer, then flush it
-  unsigned long pauseUntil = millis() + 550UL; //Wait > 500ms so we can be sure SD data is sync'd
-  while (millis() < pauseUntil) //While we are pausing, keep writing data to SD
+  if (drainMs > 0)
   {
-    storeData();
+    unsigned long pauseUntil = millis() + drainMs; //While we are pausing, keep writing data to SD
+    while (millis() < pauseUntil)
+    {
+      storeData();
+    }
   }
 
   storeFinalData();
@@ -59,10 +62,18 @@ void gracefulPowerDownSync(void)
       gnssDataFile.truncate(usedLength);
     gnssDataFile.sync();
     updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
-    gnssDataFile.close();
+    gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
   }
 
-  healthMarkSessionClean();
+  healthMarkSessionClean(); //The log file (if any) was closed properly
+}
+
+// Gracefully sync and close the log file before an anticipated power loss.
+// Safe to call from normal (non-interrupt) loop context where SPI/SD I/O is allowed.
+// After this returns the caller should proceed to powerDown() / stop logging.
+void gracefulPowerDownSync(void)
+{
+  closeDataFileGracefully(550);
 
   delay(sdPowerDownDelay); // Give the SD card time to finish writing ***** THIS IS CRITICAL *****
 }
@@ -187,21 +198,7 @@ void goToSleep()
   //Save files before going to sleep
   if (online.dataLogging == true)
   {
-    unsigned long pauseUntil = millis() + 550UL; //Wait > 500ms so we can be sure SD data is sync'd
-    while (millis() < pauseUntil) //While we are pausing, keep writing data to SD
-    {
-      storeData();
-    }
-
-    storeFinalData();
-    gnssDataFile.sync();
-
-    updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
-
-    gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
-
-    healthMarkSessionClean();
-
+    closeDataFileGracefully(550);
     delay(sdPowerDownDelay); // Give the SD card time to finish writing ***** THIS IS CRITICAL *****
   }
 
@@ -449,24 +446,8 @@ void stopLogging(void)
     //and success will always be false (sendCommand returns SFE_UBLOX_STATUS_SUCCESS not SFE_UBLOX_STATUS_DATA_SENT)
   }
 
-  //Save files before going to sleep
-  if (online.dataLogging == true)
-  {
-    unsigned long pauseUntil = millis() + 550UL; //Wait > 500ms so we can be sure SD data is sync'd
-    while (millis() < pauseUntil) //While we are pausing, keep writing data to SD
-    {
-      storeData();
-    }
-
-    storeFinalData();
-    gnssDataFile.sync();
-
-    updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
-
-    gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
-  }
-
-  healthMarkSessionClean();
+  //Save files before stopping
+  closeDataFileGracefully(550);
 
   Serial.print("Logging is stopped. Please reset OpenLog Artemis and open a terminal at ");
   Serial.print((String)settings.serialTerminalBaudRate);

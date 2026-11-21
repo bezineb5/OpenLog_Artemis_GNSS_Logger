@@ -236,6 +236,7 @@ void feedWatchdog();
 void haltWatchdog();
 void resumeWatchdog();
 void gracefulPowerDownSync(void); // Sync+close log file before anticipated power loss (safe from loop context)
+void closeDataFileGracefully(uint32_t drainMs); // Single shared close path for all log-file shutdowns
 
 void setup() {
   //If 3.3V rail drops below 3V, system will power down and maintain RTC

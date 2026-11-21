@@ -402,30 +402,11 @@ void openNewLogFile()
       //Using a maxWait of zero means we don't wait for the ACK/NACK
       //and success will always be false (sendCommand returns SFE_UBLOX_STATUS_SUCCESS not SFE_UBLOX_STATUS_DATA_SENT)
 
-      unsigned long pauseUntil = millis() + 2100UL; //Wait > 500ms so we can be sure SD data is sync'd
-      while (millis() < pauseUntil) //While we are pausing, keep writing data to SD
-      {
-        storeData();
-      }
-
       //We've waited long enough for the last of the data to come in
       //so now we can close the current file and open a new one
       Serial.print(F("Closing: "));
       Serial.println(gnssDataFileName);
-      storeFinalData();
-      
-      // Ensure file is properly synced before closing
-      if (gnssDataFile.isOpen())
-      {
-        // Shrink the file to the actual data length to remove trailing zeros
-        uint32_t usedLength = gnssDataFile.curPosition();
-        gnssDataFile.truncate(usedLength);
-        gnssDataFile.sync();
-        updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
-        gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
-      }
-
-      healthMarkSessionClean(); // The previous file was closed properly
+      closeDataFileGracefully(2100);
 
       strcpy(gnssDataFileName, findNextAvailableLog(settings.nextDataLogNumber, "dataLog"));
 
@@ -482,24 +463,11 @@ void closeLogFile()
       //Using a maxWait of zero means we don't wait for the ACK/NACK
       //and success will always be false (sendCommand returns SFE_UBLOX_STATUS_SUCCESS not SFE_UBLOX_STATUS_DATA_SENT)
 
-      unsigned long pauseUntil = millis() + 2100UL; //Wait > 500ms so we can be sure SD data is sync'd
-      while (millis() < pauseUntil) //While we are pausing, keep writing data to SD
-      {
-        storeData();
-      }
-
       //We've waited long enough for the last of the data to come in
       //so now we can close the current file and open a new one
       Serial.print(F("Closing: "));
       Serial.println(gnssDataFileName);
-      storeFinalData();
-      gnssDataFile.sync();
-
-      updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
-
-      gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
-
-      healthMarkSessionClean();
+      closeDataFileGracefully(2100);
     }
   }
 }
@@ -516,22 +484,11 @@ void resetGNSS()
       //Using a maxWait of zero means we don't wait for the ACK/NACK
       //and success will always be false (sendCommand returns SFE_UBLOX_STATUS_SUCCESS not SFE_UBLOX_STATUS_DATA_SENT)
 
-      unsigned long pauseUntil = millis() + 2100UL; //Wait >> 500ms so we can be sure SD data is sync'd
-      while (millis() < pauseUntil) //While we are pausing, keep writing data to SD
-      {
-        storeData();
-      }
-
       //We've waited long enough for the last of the data to come in
       //so now we can close the current file and open a new one
       Serial.print(F("Closing: "));
       Serial.println(gnssDataFileName);
-      storeFinalData();
-      gnssDataFile.sync();
-
-      updateDataFileAccess(&gnssDataFile); //Update the file access time stamp
-
-      gnssDataFile.close(); //No need to close files. https://forum.arduino.cc/index.php?topic=149504.msg1125098#msg1125098
+      closeDataFileGracefully(2100);
 
       //Reset the GNSS
       gpsSensor_ublox.factoryDefault(2100);
