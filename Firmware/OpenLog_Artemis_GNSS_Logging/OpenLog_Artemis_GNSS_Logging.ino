@@ -86,6 +86,7 @@ const int FIRMWARE_VERSION_MINOR = 2;
 #define OLA_IDENTIFIER 0x222 // This will appear as 546 (decimal) in OLA_GNSS_settings.cfg
 
 #include "settings.h"
+#include "health.h"
 
 //Define the pin functions
 //Depends on hardware version. This can be found as a marking on the PCB.

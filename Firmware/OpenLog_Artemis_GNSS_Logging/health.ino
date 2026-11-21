@@ -21,6 +21,8 @@
   SparkFun code, firmware, and software is released under the MIT License.
 */
 
+#include "health.h"
+
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 // Tunables
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -35,36 +37,6 @@
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 #define HEALTH_BREADCRUMB_MAGIC 0x42434F4EUL // 'BCON'
-
-enum healthPhaseId : uint32_t
-{
-  HEALTH_PHASE_NONE = 0,
-  HEALTH_PHASE_SETUP_START,
-  HEALTH_PHASE_SD_BEGIN,
-  HEALTH_PHASE_SETTINGS_LOADED,
-  HEALTH_PHASE_BOOT_RECORDED,
-  HEALTH_PHASE_DATA_LOGGING,
-  HEALTH_PHASE_SENSORS,
-  HEALTH_PHASE_READY,
-  HEALTH_PHASE_LOOP,
-  HEALTH_PHASE_SD_WRITE,
-  HEALTH_PHASE_ROTATE,
-  HEALTH_PHASE_POWER_DOWN,
-  HEALTH_PHASE_SLEEP,
-};
-
-struct struct_healthBreadcrumb
-{
-  uint32_t magic;          // HEALTH_BREADCRUMB_MAGIC when the contents are meaningful
-  uint32_t phase;          // Last healthPhase reached (see healthPhaseName)
-  uint32_t beats;          // Heartbeat counter (increments once per loop)
-  uint32_t lastBeatMs;     // millis() at the last heartbeat
-  uint32_t maxWriteUs;     // Worst single gnssDataFile.write() in this session
-  uint32_t writes;         // Number of gnssDataFile.write() calls this session
-  uint32_t feeds;          // Watchdog feeds this session
-  uint16_t bufferHighWater;// Worst GPS file-buffer fill seen
-  uint16_t reserved;
-};
 
 // .noinit is not cleared by the C runtime, so a watchdog reset leaves it intact.
 // (On the Apollo3 (ELF) this lands in an uninitialised RAM section. Guarded so the
