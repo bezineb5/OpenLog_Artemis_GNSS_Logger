@@ -1036,6 +1036,32 @@ boolean writeGnssConfigAtomic(bool wantGPS, bool wantGAL, bool wantGLO, bool wan
   if (!seenGPS || !seenGAL || !seenGLO || !seenBDS || !seenQZSS)
     return (false); //The module did not report all five constellation blocks
 
+  //The M8Q counts EVERY enabled CFG-GNSS block - including SBAS, which the
+  //factory config has enabled - toward its limit of 3 concurrent
+  //constellations. A write enabling more than 3 is NACKed and the old config
+  //stays, which is exactly how Galileo silently never got enabled. Count all
+  //enabled blocks and drop SBAS (augmentation only) if that puts us over.
+  uint8_t enabledCount = 0;
+  int sbasBlock = -1;
+  for (uint8_t i = 0; i < numBlocks; i++)
+  {
+    uint8_t *block = &customPayload[4 + (i * 8)];
+    if (block[4] & 0x01)
+    {
+      enabledCount++;
+      if (block[0] == SFE_UBLOX_GNSS_ID_SBAS) sbasBlock = i;
+    }
+  }
+  if (enabledCount > 3 && sbasBlock >= 0)
+  {
+    customPayload[4 + (sbasBlock * 8) + 4] &= 0xFE; //Clear SBAS enable bit
+    enabledCount--;
+    if (settings.printMajorDebugMessages == true)
+      Serial.println(F("writeGnssConfigAtomic: SBAS disabled to stay within the M8Q 3-constellation limit"));
+  }
+  if (enabledCount > 3)
+    return (false); //Still over the limit - do not send a config the module will NACK
+
   customCfg.len = 4 + (numBlocks * 8); //Write the modified config back in one message
   customCfg.startingSpot = 0;
   //A CFG write is ACKed, so sendCommand returns SFE_UBLOX_STATUS_SUCCESS on ACK-ACK
@@ -1078,6 +1104,9 @@ boolean enableConstellations(uint16_t maxWait)
     if (settings.printMajorDebugMessages == true)
       Serial.println(F("enableConstellations: falling back to per-constellation enables"));
     success = true;
+    //SBAS counts toward the M8Q's 3-constellation limit - disable it first or
+    //the per-constellation CFG-GNSS writes will be NACKed
+    gpsSensor_ublox.enableGNSS(false, SFE_UBLOX_GNSS_ID_SBAS, maxWait);
     success &= gpsSensor_ublox.enableGNSS(wantGPS, SFE_UBLOX_GNSS_ID_GPS, maxWait);
     success &= gpsSensor_ublox.enableGNSS(wantGLO, SFE_UBLOX_GNSS_ID_GLONASS, maxWait);
     success &= gpsSensor_ublox.enableGNSS(wantGAL, SFE_UBLOX_GNSS_ID_GALILEO, maxWait);
@@ -1101,12 +1130,13 @@ boolean enableConstellations(uint16_t maxWait)
 
   if (settings.printMinorDebugMessages)
   {
-    Serial.printf("enableConstellations: GPS=%d GLO=%d GAL=%d BDS=%d QZSS=%d\r\n",
+    Serial.printf("enableConstellations: GPS=%d GLO=%d GAL=%d BDS=%d QZSS=%d SBAS=%d\r\n",
       gpsSensor_ublox.isGNSSenabled(SFE_UBLOX_GNSS_ID_GPS, maxWait),
       gpsSensor_ublox.isGNSSenabled(SFE_UBLOX_GNSS_ID_GLONASS, maxWait),
       gpsSensor_ublox.isGNSSenabled(SFE_UBLOX_GNSS_ID_GALILEO, maxWait),
       gpsSensor_ublox.isGNSSenabled(SFE_UBLOX_GNSS_ID_BEIDOU, maxWait),
-      gpsSensor_ublox.isGNSSenabled(SFE_UBLOX_GNSS_ID_QZSS, maxWait));
+      gpsSensor_ublox.isGNSSenabled(SFE_UBLOX_GNSS_ID_QZSS, maxWait),
+      gpsSensor_ublox.isGNSSenabled(SFE_UBLOX_GNSS_ID_SBAS, maxWait));
     if (success)
     {
       Serial.println(F("enableConstellations: successful"));
